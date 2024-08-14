@@ -81,6 +81,8 @@ def run_all_tests():
             run_test(stash.RAM(), obj)
         if hasattr(stash, 'FsDB'):
             run_test(stash.FsDB(tmpdir/'disk'), obj)
+        if hasattr(stash, 'Sled'):
+            run_test(stash.Sled(tmpdir/'sled'), obj)
 
 
 if __name__ == '__main__':

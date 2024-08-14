@@ -18,3 +18,7 @@ crate-type = ["cdylib"]
 [dependencies]
 pyo3 = { version = "0.22", features = ["extension-module"] }
 blake3 = "1.5"
+sled = { version = "0.34", optional = true }
+
+[features]
+sled = ["dep:sled"]
