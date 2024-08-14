@@ -1,6 +1,8 @@
 use pyo3::prelude::*;
 
 mod fsdb;
+#[cfg(feature = "iroh")]
+mod iroh;
 mod nil;
 mod pydb;
 mod ram;
@@ -14,5 +16,7 @@ pub fn populate_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ram::PyRam>()?;
     #[cfg(feature = "sled")]
     m.add_class::<sled::PySled>()?;
+    #[cfg(feature = "iroh")]
+    m.add_class::<iroh::PyIroh>()?;
     Ok(())
 }
