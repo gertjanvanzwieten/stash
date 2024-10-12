@@ -22,7 +22,9 @@ sled = { version = "0.34", optional = true }
 iroh = { version = "0.22", optional = true }
 tokio = { version = "1.39", optional = true }
 anyhow = { version = "1.0", optional = true }
+lsm-tree = { version = "2.0", optional = true }
 
 [features]
 sled = ["dep:sled"]
 iroh = ["dep:iroh", "dep:tokio", "dep:anyhow"]
+lsm-tree = ["dep:lsm-tree"]

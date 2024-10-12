@@ -83,6 +83,8 @@ def run_all_tests():
             run_test(stash.FsDB(tmpdir/'disk'), obj)
         if hasattr(stash, 'Sled'):
             run_test(stash.Sled(tmpdir/'sled'), obj)
+        if hasattr(stash, 'LSMTree'):
+            run_test(stash.LSMTree(tmpdir/'lsm'), obj)
         if hasattr(stash, 'Iroh'):
             run_test(stash.Iroh('/home/gertjan/.local/share/iroh'), obj)
 

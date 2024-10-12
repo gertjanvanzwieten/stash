@@ -8,6 +8,8 @@ mod pydb;
 mod ram;
 #[cfg(feature = "sled")]
 mod sled;
+#[cfg(feature = "lsm-tree")]
+mod lsm_tree;
 
 pub fn populate_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(nil::hash, m)?)?;
@@ -18,5 +20,7 @@ pub fn populate_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<sled::PySled>()?;
     #[cfg(feature = "iroh")]
     m.add_class::<iroh::PyIroh>()?;
+    #[cfg(feature = "lsm-tree")]
+    m.add_class::<lsm_tree::PyLSMTree>()?;
     Ok(())
 }
