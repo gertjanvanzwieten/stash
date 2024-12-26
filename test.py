@@ -22,16 +22,18 @@ class Stash(unittest.TestCase):
         obj_ = db.loads(b)
         self.assertIs(type(obj), type(obj_))
         self.assertEqual(eq(obj_), eq(obj))
-        return d[b]
+        s = d[b]
+        self.assertEqual(s[0], 0)
+        return s[1]
 
     def test_int(self):
-        self.assertEqual(len(self.check(-1)), 2)
-        self.assertEqual(len(self.check(0)), 1)
-        self.assertEqual(len(self.check(1)), 2)
-        self.assertEqual(len(self.check(127)), 2)
-        self.assertEqual(len(self.check(128)), 3)
-        self.assertEqual(len(self.check(-128)), 2)
-        self.assertEqual(len(self.check(-129)), 3)
+        self.assertEqual(self.check(-1), 2)
+        self.assertEqual(self.check(0), 1)
+        self.assertEqual(self.check(1), 2)
+        self.assertEqual(self.check(127), 2)
+        self.assertEqual(self.check(128), 3)
+        self.assertEqual(self.check(-128), 2)
+        self.assertEqual(self.check(-129), 3)
 
     def test_float(self):
         self.check(0.)

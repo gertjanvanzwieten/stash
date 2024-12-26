@@ -3,7 +3,7 @@ use pyo3::{pyfunction, types::PyBytes, Bound, PyAny, PyResult};
 use crate::{
     keygen::{Blake3, KeyGenerator},
     mapping::{Mapping, MappingError, MappingResult},
-    serialize::serialize,
+    serialize::serialize_notraverse,
 };
 
 use std::{hash::Hash, ops::Deref};
@@ -22,5 +22,5 @@ impl<G: KeyGenerator<Key: Hash>> Mapping for Nil<G> {
 
 #[pyfunction]
 pub fn hash<'py>(obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyBytes>> {
-    serialize(obj, &mut Nil(Blake3))
+    serialize_notraverse(obj, &mut Nil(Blake3))
 }

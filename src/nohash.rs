@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    hash::{BuildHasher, Hasher},
-};
+use std::hash::{BuildHasher, Hasher};
 
 #[derive(Default)]
 pub struct NoHashBuilder;
@@ -29,8 +26,6 @@ impl Hasher for NoHasher {
         }
     }
 }
-
-pub type NoHashMap<K, V> = HashMap<K, V, NoHashBuilder>;
 
 #[cfg(test)]
 mod tests {

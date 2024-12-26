@@ -1,4 +1,4 @@
-use crate::{bytes::Bytes, int::Int, mapping::Mapping, nohash::NoHashMap, token};
+use crate::{bytes::Bytes, int::Int, mapping::Mapping, token, usize};
 use pyo3::{
     exceptions::PyTypeError,
     intern,
@@ -14,179 +14,178 @@ pub fn deserialize<'py, M: Mapping<Key: Hash>>(
     obj: &Bound<'py, PyBytes>,
     db: &M,
 ) -> PyResult<Bound<'py, PyAny>> {
-    let hash = M::Key::from_bytes(obj.as_bytes()).unwrap();
-    let b = db.get_blob(hash)?;
-    Deserialize::new(obj.py())?
-        .deserialize(&b, db)?
-        .create(obj.py())
+    let b = db.get_blob_from_bytes_exact(obj.as_bytes())?;
+    assert!(
+        b[0] == token::TRAVERSE,
+        "can only deserialize chunks of type 'traverse' for now"
+    );
+    let n = chunk_length::<M>(b[1]);
+    let (chunk, tail) = b[1..].split_at(n);
+    let mut items: Vec<Option<Bound<PyAny>>> = Vec::new();
+    let mut backrefs = tail.iter().cloned();
+    let py = obj.py();
+    let int = Int::new(py)?;
+    deserialize_chunk(chunk, db, &mut items, &mut backrefs, py, &int)
 }
 
-struct Deserialize<'py, M: Mapping> {
+fn deserialize_chunk<'py, M: Mapping<Key: Hash>, I: std::iter::Iterator<Item = u8>>(
+    b: &[u8],
+    db: &M,
+    items: &mut Vec<Option<Bound<'py, PyAny>>>,
+    backrefs: &mut I,
     py: Python<'py>,
-    int: Int<'py>,
-    cache: NoHashMap<M::Key, Object<'py>>,
-}
+    int: &Int<'py>,
+) -> PyResult<Bound<'py, PyAny>> {
 
-impl<'py, M: Mapping<Key: Hash>> Deserialize<'py, M> {
-    fn new(py: Python<'py>) -> PyResult<Self> {
-        Ok(Self {
-            py,
-            int: Int::new(py)?,
-            cache: NoHashMap::default(),
-        })
+    let nitems = items.len();
+    let index = usize::decode(backrefs);
+    if index != 0 {
+        return Ok(items[nitems - index]
+            .as_ref()
+            .expect("referenced object is not yet finished")
+            .clone());
     }
-    fn deserialize(&mut self, s: &[u8], db: &M) -> PyResult<Object<'py>> {
-        let token = s[0];
-        let data = &s[1..];
-        Ok(match token {
-            token::BYTES => Object::Immutable(PyBytes::new(self.py, data).into_any()),
-            token::BYTEARRAY => Object::ByteArray(data.into()),
-            token::STRING => {
-                Object::Immutable(PyString::new(self.py, std::str::from_utf8(data)?).into_any())
+    items.push(None);
+
+    let owned;
+    let s = if b[0] == 0 {
+        owned = db.get_blob_from_bytes(&b[1..])?;
+        owned.as_ref()
+    } else {
+        &b[1..1 + usize::from(b[0])]
+    };
+    let token = s[0];
+    let data = &s[1..];
+
+    let obj = match token {
+        token::BYTES => PyBytes::new(py, data).into_any(),
+        token::BYTEARRAY => PyByteArray::new(py, data).into_any(),
+        token::STRING => PyString::new(py, std::str::from_utf8(data)?).into_any(),
+        token::INT => int.read_from(data)?.into_any(),
+        token::FLOAT => PyFloat::new(py, f64::from_le_bytes(data.try_into()?)).into_any(),
+        token::LIST => {
+            let obj = PyList::empty(py);
+            let mut i = 0;
+            while i < data.len() {
+                obj.append(deserialize_chunk(&data[i..], db, items, backrefs, py, int)?)?;
+                i += chunk_length::<M>(data[i]);
             }
-            token::INT => Object::Immutable(self.int.read_from(data)?),
-            token::FLOAT => Object::Immutable(
-                PyFloat::new(self.py, f64::from_le_bytes(data.try_into()?)).into_any(),
-            ),
-            token::LIST => Object::List(self.deserialize_chunks(data, db)?),
-            token::TUPLE => {
-                let v = self.deserialize_chunks(data, db)?;
-                if v.iter().all(|obj| matches!(obj, Object::Immutable(_))) {
-                    Object::Immutable(Object::Tuple(v).create(self.py)?)
-                } else {
-                    Object::Tuple(v)
-                }
-            }
-            token::SET => Object::Set(self.deserialize_chunks(data, db)?),
-            token::FROZENSET => {
-                let v = self.deserialize_chunks(data, db)?;
-                if v.iter().all(|obj| matches!(obj, Object::Immutable(_))) {
-                    Object::Immutable(Object::FrozenSet(v).create(self.py)?)
-                } else {
-                    Object::FrozenSet(v)
-                }
-            }
-            token::DICT => {
-                let mut it = self.deserialize_chunks(data, db)?.into_iter();
-                let mut v = Vec::with_capacity(it.len() / 2);
-                while let Some(k) = it.next() {
-                    v.push((k, it.next().unwrap()));
-                }
-                Object::Dict(v)
-            }
-            token::NONE => Object::Immutable(self.py.None().into_bound(self.py)),
-            token::TRUE => Object::Immutable(PyBool::new(self.py, true).to_owned().into_any()),
-            token::FALSE => Object::Immutable(PyBool::new(self.py, false).to_owned().into_any()),
-            token::GLOBAL => {
-                let (module, qualname) = std::str::from_utf8(data)?.split_once(':').unwrap();
-                Object::Immutable(
-                    PyModule::import(self.py, module)?
-                        .getattr(qualname)?
-                        .into_any(),
-                )
-            }
-            token::REDUCE => Object::Reduce(self.deserialize_chunks(data, db)?),
-            _ => return Err(PyTypeError::new_err("cannot load object")),
-        })
-    }
-    fn deserialize_chunks(&mut self, s: &[u8], db: &M) -> PyResult<Vec<Object<'py>>> {
-        let mut rem = s;
-        let mut items = Vec::new();
-        while !rem.is_empty() {
-            let mut n: usize = rem[0].into();
-            items.push(if n == 0 {
-                n = M::Key::NBYTES;
-                let hash = M::Key::from_bytes(&rem[1..1 + n]).unwrap();
-                match self.cache.get(&hash) {
-                    Some(obj) => obj.clone(),
-                    None => {
-                        let obj = self.deserialize(&db.get_blob(hash.clone())?, db)?;
-                        self.cache.insert(hash, obj.clone());
-                        obj
-                    }
-                }
-            } else {
-                self.deserialize(&rem[1..1 + n], db)?
-            });
-            rem = &rem[1 + n..];
+            obj.into_any()
         }
-        Ok(items)
-    }
-}
-
-#[derive(Clone)]
-enum Object<'py> {
-    ByteArray(Vec<u8>),
-    List(Vec<Object<'py>>),
-    Tuple(Vec<Object<'py>>),
-    Set(Vec<Object<'py>>),
-    FrozenSet(Vec<Object<'py>>),
-    Dict(Vec<(Object<'py>, Object<'py>)>),
-    Reduce(Vec<Object<'py>>),
-    Immutable(Bound<'py, PyAny>),
-}
-
-impl<'py> Object<'py> {
-    fn create(self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        Ok(match self {
-            Self::ByteArray(v) => PyByteArray::new(py, &v).into_any(),
-            Self::List(v) => PyList::new(
-                py,
-                v.into_iter()
-                    .map(|item| item.create(py))
-                    .collect::<Result<Vec<_>, _>>()?,
-            )?
-            .into_any(),
-            Self::Tuple(v) => PyTuple::new(
-                py,
-                v.into_iter()
-                    .map(|item| item.create(py))
-                    .collect::<Result<Vec<_>, _>>()?,
-            )?
-            .into_any(),
-            Self::Set(v) => PySet::new(
-                py,
-                v.into_iter()
-                    .map(|item| item.create(py))
-                    .collect::<Result<Vec<_>, _>>()?
-                    .iter(),
-            )?
-            .into_any(),
-            Self::FrozenSet(v) => PyFrozenSet::new(
-                py,
-                v.into_iter()
-                    .map(|item| item.create(py))
-                    .collect::<Result<Vec<_>, _>>()?
-                    .iter(),
-            )?
-            .into_any(),
-            Self::Dict(v) => {
-                let d = PyDict::new(py);
-                for (k, v) in v {
-                    d.set_item(&k.create(py)?, &v.create(py)?)?;
-                }
-                d.into_any()
+        token::TUPLE => {
+            let mut objs = Vec::new();
+            let mut i = 0;
+            while i < data.len() {
+                objs.push(deserialize_chunk(&data[i..], db, items, backrefs, py, int)?);
+                i += chunk_length::<M>(data[i]);
             }
-            Self::Reduce(v) => {
-                let mut it = v.into_iter();
-                let func = it.next().unwrap().create(py)?;
-                let args: Bound<PyTuple> = it.next().unwrap().create(py)?.extract()?;
-                let obj = func.call1(args)?;
-                if let Some(state) = it.next() {
-                    let state = state.create(py)?;
-                    if let Ok(setstate) = obj.getattr(intern!(py, "__setstate__")) {
-                        setstate.call1((state,))?;
-                    } else if let Ok(items) = state.downcast_exact::<PyDict>() {
-                        for (k, v) in items {
-                            let attrname: &str = k.extract()?; // TODO avoid extraction
-                            obj.setattr(attrname, v)?;
-                        }
+            PyTuple::new(py, objs)?.into_any()
+        }
+        token::SET => {
+            let mut offsets = Vec::new();
+            let mut indices = Vec::new();
+            let mut i: usize = 0;
+            while i < data.len() {
+                indices.push(usize::decode(backrefs));
+                offsets.push(i);
+                i += chunk_length::<M>(data[i]);
+            }
+            assert!(i == data.len(), "invalid data length for set");
+            let obj = PySet::empty(py)?;
+            for index in indices {
+                let offset = offsets[index];
+                let item = deserialize_chunk(&data[offset..], db, items, backrefs, py, int)?;
+                obj.add(item)?;
+            }
+            obj.into_any()
+        }
+        token::FROZENSET => {
+            let mut offsets = Vec::new();
+            let mut indices = Vec::new();
+            let mut i: usize = 0;
+            while i < data.len() {
+                indices.push(usize::decode(backrefs));
+                offsets.push(i);
+                i += chunk_length::<M>(data[i]);
+            }
+            assert!(i == data.len(), "invalid data length for frozenset");
+            let items = indices
+                .into_iter()
+                .map(|index| {
+                    deserialize_chunk(&data[offsets[index]..], db, items, backrefs, py, int)
+                })
+                .collect::<PyResult<Vec<_>>>()?;
+            PyFrozenSet::new(py, items)?.into_any()
+        }
+        token::DICT => {
+            let mut offsets = Vec::new();
+            let mut indices = Vec::new();
+            let mut i: usize = 0;
+            while i < data.len() {
+                indices.push(usize::decode(backrefs));
+                let j = i + chunk_length::<M>(data[i]);
+                offsets.push((i, j));
+                i = j + chunk_length::<M>(data[j]);
+            }
+            assert!(i == data.len(), "invalid data length for dict");
+            let d = PyDict::new(py);
+            for index in indices {
+                let (i, j) = offsets[index];
+                let k = deserialize_chunk(&data[i..], db, items, backrefs, py, int)?;
+                let v = deserialize_chunk(&data[j..], db, items, backrefs, py, int)?;
+                d.set_item(k, v)?;
+            }
+            d.into_any()
+        }
+        token::NONE => py.None().into_bound(py),
+        token::TRUE => PyBool::new(py, true).to_owned().into_any(),
+        token::FALSE => PyBool::new(py, false).to_owned().into_any(),
+        token::GLOBAL => {
+            let (module, qualname) = std::str::from_utf8(data)?
+                .split_once(':')
+                .expect("qualname does not contain a colon");
+            PyModule::import(py, module)?.getattr(qualname)?.into_any()
+        }
+        token::REDUCE => {
+            let mut objs = Vec::new();
+            let mut i = 0;
+            while i < data.len() {
+                objs.push(deserialize_chunk(&data[i..], db, items, backrefs, py, int)?);
+                i += chunk_length::<M>(data[i]);
+            }
+            let mut it = objs.into_iter();
+            let func = it
+                .next()
+                .expect("reduction tuple does not contain function");
+            let args: Bound<PyTuple> = it
+                .next()
+                .expect("reduction tuple does not contain arguments")
+                .extract()?;
+            let obj = func.call1(args)?;
+            if let Some(state) = it.next() {
+                if let Ok(setstate) = obj.getattr(intern!(py, "__setstate__")) {
+                    setstate.call1((state,))?;
+                } else if let Ok(items) = state.downcast_exact::<PyDict>() {
+                    for (k, v) in items {
+                        let attrname: &str = k.extract()?; // TODO avoid extraction
+                        obj.setattr(attrname, v)?;
                     }
                 }
-                // TODO else errors
-                obj
             }
-            Self::Immutable(obj) => obj,
-        })
+            // TODO else errors
+            obj
+        }
+        _ => return Err(PyTypeError::new_err("cannot load object")),
+    };
+
+    items[nitems] = Some(obj.clone());
+    Ok(obj)
+}
+
+fn chunk_length<M: Mapping>(nbytes: u8) -> usize {
+    1 + if nbytes != 0 {
+        nbytes.into()
+    } else {
+        M::Key::NBYTES
     }
 }

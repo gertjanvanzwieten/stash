@@ -10,6 +10,7 @@ mod mapping;
 mod nohash;
 mod serialize;
 mod token;
+mod usize;
 
 #[pymodule(name = "stash")]
 fn stash_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
