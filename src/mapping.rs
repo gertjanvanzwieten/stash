@@ -7,8 +7,8 @@ use std::{fmt::Display, ops::Deref};
 
 pub trait Mapping {
     type Key: Bytes;
-    fn put_blob(&mut self, b: Vec<u8>) -> MappingResult<Self::Key>;
-    fn get_blob(&self, h: &Self::Key) -> MappingResult<impl Deref<Target = [u8]>>;
+    fn put_blob(&mut self, b: impl AsRef<[u8]>) -> MappingResult<Self::Key>;
+    fn get_blob(&self, h: Self::Key) -> MappingResult<impl Deref<Target = [u8]>>;
 }
 
 pub enum MappingError {

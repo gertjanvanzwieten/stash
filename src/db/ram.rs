@@ -29,15 +29,17 @@ impl<G: KeyGenerator, S: Default> Ram<G, S> {
 
 impl<G: KeyGenerator<Key: Hash>, S: BuildHasher> Mapping for Ram<G, S> {
     type Key = G::Key;
-    fn put_blob(&mut self, b: Vec<u8>) -> MappingResult<Self::Key> {
-        let h = self.keygen.digest(&b);
-        self.hashmap.entry(h.clone()).or_insert(b);
+    fn put_blob(&mut self, b: impl AsRef<[u8]>) -> MappingResult<Self::Key> {
+        let h = self.keygen.digest(b.as_ref());
+        self.hashmap
+            .entry(h.clone())
+            .or_insert_with(|| b.as_ref().to_vec());
         Ok(h)
     }
-    fn get_blob(&self, h: &Self::Key) -> MappingResult<impl Deref<Target = [u8]>> {
+    fn get_blob(&self, h: Self::Key) -> MappingResult<impl Deref<Target = [u8]>> {
         self.hashmap
-            .get(h)
-            .map_or_else(|| Err(MappingError::not_found(h)), |v| Ok(v.deref()))
+            .get(&h)
+            .map_or_else(|| Err(MappingError::not_found(&h)), |v| Ok(v.deref()))
     }
 }
 

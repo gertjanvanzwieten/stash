@@ -22,16 +22,16 @@ impl Bytes for iroh::blobs::Hash {
 
 impl Mapping for iroh::client::Iroh {
     type Key = iroh::blobs::Hash;
-    fn put_blob(&mut self, b: Vec<u8>) -> MappingResult<Self::Key> {
+    fn put_blob(&mut self, b: impl AsRef<[u8]>) -> MappingResult<Self::Key> {
         let rt = tokio::runtime::Handle::current();
         let _guard = rt.enter();
-        let outcome = rt.block_on(self.blobs().add_bytes(b))?;
+        let outcome = rt.block_on(self.blobs().add_bytes(b.as_ref().to_vec()))?;
         Ok(outcome.hash)
     }
-    fn get_blob(&self, h: &Self::Key) -> MappingResult<impl Deref<Target = [u8]>> {
+    fn get_blob(&self, h: Self::Key) -> MappingResult<impl Deref<Target = [u8]>> {
         let rt = tokio::runtime::Handle::current();
         let _guard = rt.enter();
-        let mut reader = rt.block_on(self.blobs().read(h.clone()))?;
+        let mut reader = rt.block_on(self.blobs().read(h))?;
         let bytes = rt.block_on(reader.read_to_bytes())?;
         Ok(bytes)
     }

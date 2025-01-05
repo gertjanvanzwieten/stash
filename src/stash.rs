@@ -85,7 +85,7 @@ pub struct Serialize<'py, M: Mapping> {
 impl<'py, M: Mapping> Serialize<'py, M> {
     pub fn to_py(obj: &Bound<'py, PyAny>, db: &mut M) -> PyResult<Bound<'py, PyBytes>> {
         let h = Self::new(obj.py())?.serialize(obj, db)?;
-        let hash = db.put_blob(h)?;
+        let hash = db.put_blob(&h)?;
         Ok(PyBytes::new(obj.py(), hash.as_bytes()))
     }
     fn new(py: Python<'py>) -> PyResult<Self> {
@@ -217,7 +217,7 @@ impl<'py, M: Mapping> Serialize<'py, M> {
                 v.extend_from_slice(&b);
             } else {
                 v.push(0);
-                let hash = db.put_blob(b)?;
+                let hash = db.put_blob(&b)?;
                 v.extend_from_slice(hash.as_bytes());
                 let _ = self.seen.insert(obj.as_ptr(), (hash, obj.clone())); // TODO use entry
             }
@@ -272,7 +272,7 @@ pub struct Deserialize<'py, M: Mapping> {
 impl<'py, M: Mapping<Key: Hash>> Deserialize<'py, M> {
     pub fn from_py(obj: &Bound<'py, PyBytes>, db: &M) -> PyResult<Bound<'py, PyAny>> {
         let hash = M::Key::from_bytes(obj.as_bytes()).unwrap();
-        let b = db.get_blob(&hash)?;
+        let b = db.get_blob(hash)?;
         Self::new(obj.py())?.deserialize(&b, db)?.create(obj.py())
     }
     fn new(py: Python<'py>) -> PyResult<Self> {
@@ -347,7 +347,7 @@ impl<'py, M: Mapping<Key: Hash>> Deserialize<'py, M> {
                 match self.cache.get(&hash) {
                     Some(obj) => obj.clone(),
                     None => {
-                        let obj = self.deserialize(&db.get_blob(&hash)?, db)?;
+                        let obj = self.deserialize(&db.get_blob(hash.clone())?, db)?;
                         self.cache.insert(hash, obj.clone());
                         obj
                     }

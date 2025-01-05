@@ -31,15 +31,15 @@ impl<G: KeyGenerator> LSMTree<G> {
 
 impl<G: KeyGenerator> Mapping for LSMTree<G> {
     type Key = G::Key;
-    fn put_blob(&mut self, b: Vec<u8>) -> MappingResult<Self::Key> {
-        let h = self.keygen.digest(&b);
+    fn put_blob(&mut self, b: impl AsRef<[u8]>) -> MappingResult<Self::Key> {
+        let h = self.keygen.digest(b.as_ref());
         self.tree.insert(h.as_bytes(), b, /* sequence number */ 0);
         Ok(h)
     }
-    fn get_blob(&self, h: &Self::Key) -> MappingResult<impl Deref<Target = [u8]>> {
+    fn get_blob(&self, h: Self::Key) -> MappingResult<impl Deref<Target = [u8]>> {
         self.tree
             .get(h.as_bytes())?
-            .ok_or_else(|| MappingError::not_found(h))
+            .ok_or_else(|| MappingError::not_found(&h))
     }
 }
 

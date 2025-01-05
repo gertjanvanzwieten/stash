@@ -25,15 +25,15 @@ impl<G: KeyGenerator> Sled<G> {
 
 impl<G: KeyGenerator> Mapping for Sled<G> {
     type Key = G::Key;
-    fn put_blob(&mut self, b: Vec<u8>) -> MappingResult<Self::Key> {
-        let h = self.keygen.digest(&b);
-        self.db.insert(h.as_bytes(), b)?;
+    fn put_blob(&mut self, b: impl AsRef<[u8]>) -> MappingResult<Self::Key> {
+        let h = self.keygen.digest(b.as_ref());
+        self.db.insert(h.as_bytes(), b.as_ref())?;
         Ok(h)
     }
-    fn get_blob(&self, h: &Self::Key) -> MappingResult<impl Deref<Target = [u8]>> {
+    fn get_blob(&self, h: Self::Key) -> MappingResult<impl Deref<Target = [u8]>> {
         self.db
             .get(h.as_bytes())?
-            .ok_or_else(|| MappingError::not_found(h))
+            .ok_or_else(|| MappingError::not_found(&h))
     }
 }
 

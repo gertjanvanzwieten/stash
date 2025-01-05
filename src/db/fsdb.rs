@@ -41,8 +41,8 @@ impl<G: KeyGenerator> FsDB<G> {
 
 impl<G: KeyGenerator> Mapping for FsDB<G> {
     type Key = G::Key;
-    fn put_blob(&mut self, b: Vec<u8>) -> MappingResult<Self::Key> {
-        let h = self.keygen.digest(&b);
+    fn put_blob(&mut self, b: impl AsRef<[u8]>) -> MappingResult<Self::Key> {
+        let h = self.keygen.digest(b.as_ref());
         let path = self.path_for(&h);
         if !path.is_file() {
             std::fs::create_dir_all(path.parent().unwrap())?;
@@ -50,14 +50,14 @@ impl<G: KeyGenerator> Mapping for FsDB<G> {
                 .write(true)
                 .create_new(true)
                 .open(path)?
-                .write_all(&b)?;
+                .write_all(b.as_ref())?;
         }
         Ok(h)
     }
-    fn get_blob(&self, h: &Self::Key) -> MappingResult<impl Deref<Target = [u8]>> {
-        std::fs::read(self.path_for(h)).map_err(|e| {
+    fn get_blob(&self, h: Self::Key) -> MappingResult<impl Deref<Target = [u8]>> {
+        std::fs::read(self.path_for(&h)).map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
-                MappingError::not_found(h)
+                MappingError::not_found(&h)
             } else {
                 e.into()
             }
