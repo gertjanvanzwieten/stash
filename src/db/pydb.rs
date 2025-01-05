@@ -25,15 +25,12 @@ impl Mapping for &Bound<'_, PyAny> {
     type Key = [u8; 32];
     fn put_blob(&mut self, b: Vec<u8>) -> MappingResult<Self::Key> {
         let h = Blake3.digest(&b);
-        self.set_item(
-            PyBytes::new_bound(self.py(), &h),
-            PyBytes::new_bound(self.py(), &b),
-        )?;
+        self.set_item(PyBytes::new(self.py(), &h), PyBytes::new(self.py(), &b))?;
         Ok(h)
     }
     fn get_blob(&self, h: &Self::Key) -> MappingResult<impl Deref<Target = [u8]>> {
         let item = self
-            .get_item(PyBytes::new_bound(self.py(), h))?
+            .get_item(PyBytes::new(self.py(), h))?
             .downcast_exact::<PyBytes>()?
             .clone();
         Ok(PyBytesWrapper(item))

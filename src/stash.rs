@@ -40,11 +40,11 @@ struct Int<'py> {
 
 impl<'py> Int<'py> {
     fn new(py: Python<'py>) -> PyResult<Self> {
-        let t_int = PyInt::type_object_bound(py);
+        let t_int = PyInt::type_object(py);
         let from_bytes = t_int.getattr("from_bytes")?;
         let to_bytes = t_int.getattr("to_bytes")?;
         let bit_length = t_int.getattr("bit_length")?;
-        let kwargs = PyDict::new_bound(py);
+        let kwargs = PyDict::new(py);
         kwargs.set_item("byteorder", "big")?;
         kwargs.set_item("signed", true)?;
         Ok(Self {
@@ -86,16 +86,14 @@ impl<'py, M: Mapping> Serialize<'py, M> {
     pub fn to_py(obj: &Bound<'py, PyAny>, db: &mut M) -> PyResult<Bound<'py, PyBytes>> {
         let h = Self::new(obj.py())?.serialize(obj, db)?;
         let hash = db.put_blob(h)?;
-        Ok(PyBytes::new_bound(obj.py(), hash.as_bytes()))
+        Ok(PyBytes::new(obj.py(), hash.as_bytes()))
     }
     fn new(py: Python<'py>) -> PyResult<Self> {
-        let dispatch_table = PyModule::import_bound(py, "copyreg")?
+        let dispatch_table = PyModule::import(py, "copyreg")?
             .getattr("dispatch_table")?
             .downcast_exact::<PyDict>()?
             .clone();
-        let modules = PyModule::import_bound(py, "sys")?
-            .getattr("modules")?
-            .extract()?;
+        let modules = PyModule::import(py, "sys")?.getattr("modules")?.extract()?;
         Ok(Self {
             dispatch_table,
             modules,
@@ -288,14 +286,14 @@ impl<'py, M: Mapping<Key: Hash>> Deserialize<'py, M> {
         let token = s[0];
         let data = &s[1..];
         Ok(match token {
-            token::BYTES => Object::Immutable(PyBytes::new_bound(self.py, data).into_any()),
+            token::BYTES => Object::Immutable(PyBytes::new(self.py, data).into_any()),
             token::BYTEARRAY => Object::ByteArray(data.into()),
-            token::STRING => Object::Immutable(
-                PyString::new_bound(self.py, std::str::from_utf8(data)?).into_any(),
-            ),
+            token::STRING => {
+                Object::Immutable(PyString::new(self.py, std::str::from_utf8(data)?).into_any())
+            }
             token::INT => Object::Immutable(self.int.read_from(data)?),
             token::FLOAT => Object::Immutable(
-                PyFloat::new_bound(self.py, f64::from_le_bytes(data.try_into()?)).into_any(),
+                PyFloat::new(self.py, f64::from_le_bytes(data.try_into()?)).into_any(),
             ),
             token::LIST => Object::List(self.deserialize_chunks(data, db)?),
             token::TUPLE => {
@@ -324,16 +322,12 @@ impl<'py, M: Mapping<Key: Hash>> Deserialize<'py, M> {
                 Object::Dict(v)
             }
             token::NONE => Object::Immutable(self.py.None().into_bound(self.py)),
-            token::TRUE => {
-                Object::Immutable(PyBool::new_bound(self.py, true).to_owned().into_any())
-            }
-            token::FALSE => {
-                Object::Immutable(PyBool::new_bound(self.py, false).to_owned().into_any())
-            }
+            token::TRUE => Object::Immutable(PyBool::new(self.py, true).to_owned().into_any()),
+            token::FALSE => Object::Immutable(PyBool::new(self.py, false).to_owned().into_any()),
             token::GLOBAL => {
                 let (module, qualname) = std::str::from_utf8(data)?.split_once(':').unwrap();
                 Object::Immutable(
-                    PyModule::import_bound(self.py, module)?
+                    PyModule::import(self.py, module)?
                         .getattr(qualname)?
                         .into_any(),
                 )
@@ -382,22 +376,22 @@ enum Object<'py> {
 impl<'py> Object<'py> {
     fn create(self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         Ok(match self {
-            Self::ByteArray(v) => PyByteArray::new_bound(py, &v).into_any(),
-            Self::List(v) => PyList::new_bound(
+            Self::ByteArray(v) => PyByteArray::new(py, &v).into_any(),
+            Self::List(v) => PyList::new(
                 py,
                 v.into_iter()
                     .map(|item| item.create(py))
                     .collect::<Result<Vec<_>, _>>()?,
-            )
+            )?
             .into_any(),
-            Self::Tuple(v) => PyTuple::new_bound(
+            Self::Tuple(v) => PyTuple::new(
                 py,
                 v.into_iter()
                     .map(|item| item.create(py))
                     .collect::<Result<Vec<_>, _>>()?,
-            )
+            )?
             .into_any(),
-            Self::Set(v) => PySet::new_bound(
+            Self::Set(v) => PySet::new(
                 py,
                 v.into_iter()
                     .map(|item| item.create(py))
@@ -405,7 +399,7 @@ impl<'py> Object<'py> {
                     .iter(),
             )?
             .into_any(),
-            Self::FrozenSet(v) => PyFrozenSet::new_bound(
+            Self::FrozenSet(v) => PyFrozenSet::new(
                 py,
                 v.into_iter()
                     .map(|item| item.create(py))
@@ -414,7 +408,7 @@ impl<'py> Object<'py> {
             )?
             .into_any(),
             Self::Dict(v) => {
-                let d = PyDict::new_bound(py);
+                let d = PyDict::new(py);
                 for (k, v) in v {
                     d.set_item(&k.create(py)?, &v.create(py)?)?;
                 }
