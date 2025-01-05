@@ -7,9 +7,10 @@ use pyo3::{
 use std::ops::Deref;
 
 use crate::{
+    deserialize::deserialize,
     keygen::{Blake3, KeyGenerator},
     mapping::{Mapping, MappingResult},
-    stash::{Deserialize, Serialize},
+    serialize::serialize,
 };
 
 struct PyBytesWrapper<'py>(Bound<'py, PyBytes>);
@@ -52,9 +53,9 @@ impl PyDB {
         Ok(Self { pydb })
     }
     fn dumps<'py>(&self, obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyBytes>> {
-        Serialize::to_py(obj, &mut self.pydb.bind(obj.py()))
+        serialize(obj, &mut self.pydb.bind(obj.py()))
     }
     fn loads<'py>(&self, obj: &'py Bound<'py, PyBytes>) -> PyResult<Bound<'py, PyAny>> {
-        Deserialize::from_py(obj, &self.pydb.bind(obj.py()))
+        deserialize(obj, &self.pydb.bind(obj.py()))
     }
 }

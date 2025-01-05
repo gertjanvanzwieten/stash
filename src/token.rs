@@ -1,0 +1,15 @@
+pub const INT: u8 = 1;
+pub const BYTES: u8 = 2;
+pub const STRING: u8 = 3;
+pub const FLOAT: u8 = 4;
+pub const LIST: u8 = 5;
+pub const TUPLE: u8 = 6;
+pub const SET: u8 = 7;
+pub const FROZENSET: u8 = 8;
+pub const DICT: u8 = 9;
+pub const NONE: u8 = 10;
+pub const TRUE: u8 = 11;
+pub const FALSE: u8 = 12;
+pub const BYTEARRAY: u8 = 13;
+pub const REDUCE: u8 = 14;
+pub const GLOBAL: u8 = 15;

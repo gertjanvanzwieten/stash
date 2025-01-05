@@ -4,8 +4,9 @@ use pyo3::{
 
 use crate::{
     bytes::Bytes,
+    deserialize::deserialize,
     mapping::{Mapping, MappingError, MappingResult},
-    stash::{Deserialize, Serialize},
+    serialize::serialize,
 };
 
 use std::{ops::Deref, path::PathBuf};
@@ -67,11 +68,11 @@ impl PyIroh {
     }
     fn dumps<'py>(&mut self, obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyBytes>> {
         let _guard = self.runtime.enter();
-        Serialize::to_py(obj, self.client.as_mut().unwrap())
+        serialize(obj, self.client.as_mut().unwrap())
     }
     fn loads<'py>(&self, obj: &'py Bound<'py, PyBytes>) -> PyResult<Bound<'py, PyAny>> {
         let _guard = self.runtime.enter();
-        Deserialize::from_py(obj, self.client.as_ref().unwrap())
+        deserialize(obj, self.client.as_ref().unwrap())
     }
 }
 

@@ -4,9 +4,10 @@ use lsm_tree::AbstractTree;
 
 use crate::{
     bytes::Bytes,
+    deserialize::deserialize,
     keygen::{Blake3, KeyGenerator},
     mapping::{Mapping, MappingError, MappingResult},
-    stash::{Deserialize, Serialize},
+    serialize::serialize,
 };
 
 use std::{ops::Deref, path::PathBuf};
@@ -66,13 +67,13 @@ impl PyLSMTree {
         })
     }
     fn dumps<'py>(&mut self, obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyBytes>> {
-        let retval = Serialize::to_py(obj, &mut self.db);
+        let retval = serialize(obj, &mut self.db);
         if retval.is_ok() {
             self.db.flush()?;
         }
         retval
     }
     fn loads<'py>(&self, obj: &'py Bound<'py, PyBytes>) -> PyResult<Bound<'py, PyAny>> {
-        Deserialize::from_py(obj, &self.db)
+        deserialize(obj, &self.db)
     }
 }

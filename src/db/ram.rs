@@ -1,10 +1,11 @@
 use pyo3::{pyclass, pymethods, types::PyBytes, Bound, PyAny, PyResult};
 
 use crate::{
+    deserialize::deserialize,
     keygen::{Blake3, KeyGenerator},
     mapping::{Mapping, MappingError, MappingResult},
     nohash::NoHashBuilder,
-    stash::{Deserialize, Serialize},
+    serialize::serialize,
 };
 
 use std::{
@@ -57,9 +58,9 @@ impl PyRam {
         })
     }
     fn dumps<'py>(&mut self, obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyBytes>> {
-        Serialize::to_py(obj, &mut self.db)
+        serialize(obj, &mut self.db)
     }
     fn loads<'py>(&self, obj: &'py Bound<'py, PyBytes>) -> PyResult<Bound<'py, PyAny>> {
-        Deserialize::from_py(obj, &self.db)
+        deserialize(obj, &self.db)
     }
 }

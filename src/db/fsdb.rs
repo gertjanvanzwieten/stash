@@ -2,10 +2,11 @@ use pyo3::{pyclass, pymethods, types::PyBytes, Bound, PyAny, PyResult};
 
 use crate::{
     bytes::Bytes,
+    deserialize::deserialize,
     hex::Hex,
     keygen::{Blake3, KeyGenerator},
     mapping::{Mapping, MappingError, MappingResult},
-    stash::{Deserialize, Serialize},
+    serialize::serialize,
 };
 
 use std::{fmt::Write as FmtWrite, fs::OpenOptions, io::Write, ops::Deref, path::PathBuf};
@@ -77,9 +78,9 @@ impl PyFsDB {
         Self { path }
     }
     fn dumps<'py>(&self, obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyBytes>> {
-        Serialize::to_py(obj, &mut FsDB::new(self.path.clone(), Blake3))
+        serialize(obj, &mut FsDB::new(self.path.clone(), Blake3))
     }
     fn loads<'py>(&self, obj: &'py Bound<'py, PyBytes>) -> PyResult<Bound<'py, PyAny>> {
-        Deserialize::from_py(obj, &FsDB::new(self.path.clone(), Blake3))
+        deserialize(obj, &FsDB::new(self.path.clone(), Blake3))
     }
 }
