@@ -28,6 +28,17 @@ pub fn deserialize<'py, M: Mapping<Key: Hash>>(
     deserialize_chunk(chunk, db, &mut items, &mut backrefs, py, &int)
 }
 
+// Deserialize a Python object from a byte stream
+//
+// This routine takes a byte stream and deserializes it to the corresponding Python object. See
+// serialize_chunk for details on the serialization format.
+//
+// * `b` - Byte vector to deserialize into a Python object
+// * `db` - Database to load hashed blobs from.
+// * `items` - Vector of previously deserialized objects for potential backreferencing
+// * `backrefs` - Structure to keep track of object references and dictionary orderings.
+// * `py` - A marker token that represents holding the GIL.
+// * `int` - Helper object to facilitate deserialization of integers.
 fn deserialize_chunk<'py, M: Mapping<Key: Hash>, I: std::iter::Iterator<Item = u8>>(
     b: &[u8],
     db: &M,
