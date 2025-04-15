@@ -1,0 +1,18 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - release/*
+jobs:
+  package:
+    name: Build and test package
+    uses: evalf/workflow-maturin/.github/workflows/build-and-test.yaml@release/1
+    with:
+      targets: |
+        defaults = dict(python='cp310', test=True)
+        targets = []
+        targets.extend(defaults | dict(os=os, arch=arch) for os in ('linux', 'musllinux') for arch in ('x86_64', 'aarch64'))
+        targets.append(defaults | dict(os='macos', arch='universal2'))
+        targets.extend(defaults | dict(os='windows', arch=arch) for arch in ('x86_64', 'i686'))
