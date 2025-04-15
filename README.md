@@ -39,28 +39,39 @@ In short, stash serializes an object to bytes and hashes the serialization.
 
 Well, yes. But pickle stores more than what you are likely interested in, such
 as the insertion order of dictionaries, so that `{'a': 1, 'b': 2}` and `{'b':
-2, 'a': 1}` would end up receiving different hashes. Likewise, objects that
-contain multiple references to an object receive a different hash than one
-references multiple copies. Stash aims to assign a single hash to objects that
-tests true for equality.
+2, 'a': 1}` would end up receiving different hashes resulting in a cache miss.
+Likewise, objects that contain multiple references to an object receive a
+different hash than one references multiple copies. Stash loosely follows
+Python's equality operator to decide which objects are assigned a unique hash.
 
-## But what if my function does rely on insertion order?
+## Loosely?
 
-This is of course possible, in which case the standard stash.hash is
-insufficient. Ideally, the argument fingerprint incorporates precisely and only
-that what is used by the function, but that requires tight integration with the
-function itself. As an external utility, stash only provides covers two
-scenarios: the default mode that distinguishes on the basis of equality, and
-the 'strict' mode which includes all potential distinctions, such as insertion
-order and internal references. The latter would equal a pickle based hash.
+There is one fundamental problem with objects that do not test equal to
+themselves, such as `float('nan')`. Since the assigned hash is equal to itself,
+we cannot identify object equality with hash equality. Another issue is with
+`True`, `1` and `1.0` all testing equal. This is not fundamental, as we could
+very well assign all these objects the same hash, but it adds a lot of overhead
+to check for every float if it matches an integer, to no clear benefit because
+it is not at all given that functions treat these objects the same. So here we
+make the pragmatic choice of not doing the extra work.
 
-## You mentioned mutability; what if my return values are mutable?
+## And what if my function does care about things like insertion order?
 
-Excellent point. In that case we cannot simply store the returned object and
-hand it out whenever arguments match; we must hand out deep copies. We can use
-the stash serialization for that.
+In that case the standard stash hash is insufficient. Ideally, the argument
+fingerprint incorporates precisely and only that what is used by the function,
+but that requires tight integration with the function itself. As an external
+utility, stash only provides covers two scenarios: the default mode that
+distinguishes on the basis of equality, and the 'strict' mode which includes
+all potential distinctions, such as insertion order and internal references.
+The latter would equal a pickle based hash.
 
-## Say what now?
+## Ok and then we map argument hashes to the return value. Got it.
+
+You do want to be careful that the returned value is not mutated after handing
+it out, as that will mess with your cache. Best is to only hand out deep copies
+of the version you hold onto. The stash serialization can help with that.
+
+## The what now?
 
 Remember that the stash hash is based on a serialization? It is possible to
 interact with this serialization directly via `dumps` and `loads`. These
@@ -81,10 +92,10 @@ keep adding items to in return for a hash.
 
 Stash works by recursively [reducing an
 object](https://docs.python.org/3/library/pickle.html#object.__reduce__) and
-stashing the resulting components, which directly explains how common
-components are deduplicated: stashing the same object twice simply returns a
-reference to an existing hash entry. The collection of hashes so obtained is
-bundled and hashed to form the hash of the object, [Merkle
+stashing the components, which directly explains how common values are
+deduplicated: stashing the same object twice simply returns a reference to an
+existing hash entry. The resulting collection of hashes is bundled and hashed
+to form the hash of the object, [Merkle
 tree](https://en.wikipedia.org/wiki/Merkle_tree)-style. A detailed overview of
 the protocol can be found [here](PROTOCOL.md).
 
