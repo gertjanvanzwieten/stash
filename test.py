@@ -1,4 +1,9 @@
-import stash, math, numpy, unittest
+import stash, math, unittest
+
+try:
+    import numpy
+except ImportError:
+    numpy = None
 
 
 class MyClass:
@@ -90,9 +95,11 @@ class Stash(unittest.TestCase):
         self.check(MyClass)
         self.check(MyReduceableClass)
 
+    @unittest.skipIf(numpy is None, "numpy is not installed")
     def test_numpy_array(self):
         self.check(numpy.arange(.5, 12).reshape(3, 4), eq=numpy.ndarray.tolist)
 
+    @unittest.skipIf(numpy is None, "numpy is not installed")
     def test_dispatch_table(self):
         self.check(numpy.sin)
 
