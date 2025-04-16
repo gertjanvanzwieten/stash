@@ -4,8 +4,8 @@ use pyo3::{
     intern,
     prelude::*,
     types::{
-        PyBool, PyByteArray, PyBytes, PyDict, PyFloat, PyFrozenSet, PyFunction, PyInt, PyList,
-        PySet, PyString, PyTuple, PyType,
+        PyBool, PyByteArray, PyBytes, PyDict, PyFloat, PyFrozenSet, PyInt, PyList, PySet, PyString,
+        PyTuple, PyType,
     },
 };
 use std::collections::{hash_map::Entry, HashMap};
@@ -62,6 +62,7 @@ struct Helpers<'py> {
     dispatch_table: Bound<'py, PyDict>,
     modules: HashMap<String, Bound<'py, PyAny>>,
     int: Int<'py>,
+    function_type: Bound<'py, PyAny>,
 }
 
 impl<'py> Helpers<'py> {
@@ -70,13 +71,20 @@ impl<'py> Helpers<'py> {
             .getattr("dispatch_table")?
             .downcast_exact::<PyDict>()?
             .clone();
+        let function_type = PyModule::import(py, "types")?
+            .getattr("FunctionType")?
+            .clone();
         let modules = PyModule::import(py, "sys")?.getattr("modules")?.extract()?;
         let int = Int::new(py)?;
         Ok(Self {
             dispatch_table,
             modules,
             int,
+            function_type,
         })
+    }
+    fn isfunction(&self, obj: &Bound<'py, PyAny>) -> PyResult<bool> {
+        obj.is_instance(&self.function_type)
     }
 }
 
@@ -305,7 +313,7 @@ fn serialize_chunk<'py, M: Mapping>(
         } else {
             token::FALSE
         });
-    } else if obj.downcast_exact::<PyFunction>().is_ok() {
+    } else if helpers.isfunction(obj)? {
         // A function object is stored by its qualified name.
         extend_global(
             &helpers.modules,
