@@ -46,26 +46,26 @@ Python's equality operator to decide which objects are assigned a unique hash.
 
 ## Loosely?
 
-There is one fundamental problem with objects that do not test equal to
+There is a fundamental problem with objects that do not test equal to
 themselves, such as `float('nan')`. Since the assigned hash is equal to itself,
 we cannot identify object equality with hash equality. Another issue is with
 `True`, `1` and `1.0` all testing equal. This is not fundamental, as we could
 very well assign all these objects the same hash, but it adds a lot of overhead
-to check for every float if it matches an integer, to no clear benefit because
-it is not at all given that functions treat these objects the same. So here we
-make the pragmatic choice of not doing the extra work.
+to check for every float if it matches an integer, to no clear benefit as it is
+not at all given that functions treat these objects the same. So here we make
+the pragmatic choice of not doing the extra work.
 
 ## And what if my function does care about things like insertion order?
 
 In that case the standard stash hash is insufficient. Ideally, the argument
 fingerprint incorporates precisely and only that what is used by the function,
 but that requires tight integration with the function itself. As an external
-utility, stash only provides covers two scenarios: the default mode that
-distinguishes on the basis of equality, and the 'strict' mode which includes
-all potential distinctions, such as insertion order and internal references.
-The latter would equal a pickle based hash.
+utility, stash covers only two scenarios: the default mode that distinguishes
+on the basis of equality, and a 'strict' mode which includes all potential
+distinctions, such as insertion order and internal references. The latter would
+equal a pickle based hash.
 
-## Ok and then we map argument hashes to the return value. Got it.
+## Ok, and then we map argument hashes to the stored return value. Got it.
 
 You do want to be careful that the returned value is not mutated after handing
 it out, as that will mess with your cache. Best is to only hand out deep copies
@@ -99,7 +99,14 @@ to form the hash of the object, [Merkle
 tree](https://en.wikipedia.org/wiki/Merkle_tree)-style. A detailed overview of
 the protocol can be found [here](PROTOCOL.md).
 
-## This sounds great. Can I use it yet?
+## Reducing objects recursively sounds slow. Is it slow?
+
+Stash is implemented in rust for minimum overhead. It also keeps track of
+object ids seen before during serialization, to avoid recursing into the same
+object several times over. Overall the speed of stash is roughly on par with
+that of pickle when combined with an in-memory database.
+
+## This all sounds great. Can I use it yet?
 
 Better not. The project is under active development and the protocol not
 finalized, so none of the stability guarantees are worth much yet. Hopefully
