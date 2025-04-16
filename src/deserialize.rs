@@ -167,11 +167,11 @@ fn deserialize_chunk<'py, M: Mapping<Key: Hash>, I: std::iter::Iterator<Item = u
             let func = it
                 .next()
                 .expect("reduction tuple does not contain function");
-            let args: Bound<PyTuple> = it
-                .next()
-                .expect("reduction tuple does not contain arguments")
-                .extract()?;
-            let obj = func.call1(args)?;
+            let obj = func.call1(
+                it.next()
+                    .expect("reduction tuple does not contain arguments")
+                    .downcast_exact()?,
+            )?;
             if let Some(state) = it.next() {
                 if let Ok(setstate) = obj.getattr(intern!(py, "__setstate__")) {
                     setstate.call1((state,))?;

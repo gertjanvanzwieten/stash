@@ -175,9 +175,8 @@ fn serialize_chunk<'py, M: Mapping>(
         v.push(token::INT);
         helpers.int.write_to(v, obj)?;
     } else if let Ok(f) = obj.downcast_exact::<PyFloat>() {
-        let f: f64 = f.extract()?;
         v.push(token::FLOAT);
-        v.extend_from_slice(&f.to_le_bytes());
+        v.extend_from_slice(&f.value().to_le_bytes());
     } else if let Ok(l) = obj.downcast_exact::<PyList>() {
         v.push(token::LIST);
         for item in l {
