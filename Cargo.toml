@@ -16,7 +16,7 @@ name = "stash"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.23", features = ["extension-module"] }
+pyo3 = { version = "0.23", features = ["extension-module", "abi3-py38"] }
 blake3 = "1.5"
 sled = { version = "0.34", optional = true }
 iroh = { version = "0.22", optional = true }
