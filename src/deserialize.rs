@@ -47,7 +47,6 @@ fn deserialize_chunk<'py, M: Mapping<Key: Hash>, I: std::iter::Iterator<Item = u
     py: Python<'py>,
     int: &Int<'py>,
 ) -> PyResult<Bound<'py, PyAny>> {
-
     let nitems = items.len();
     let index = usize::decode(backrefs);
     if index != 0 {

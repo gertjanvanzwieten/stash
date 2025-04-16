@@ -104,7 +104,6 @@ fn serialize_chunk<'py, M: Mapping>(
     keep_alive: &mut Vec<Bound<'py, PyAny>>,
     seen: &mut HashMap<*mut pyo3::ffi::PyObject, M::Key>,
 ) -> PyResult<()> {
-
     // The backrefs object is an optional Vector, Hashmap tuple to keep track of object aspects
     // that are not represented in the object's hash. Here we check if `obj` was seen before, in
     // which case its index (relative to the tip of the object stack) is pushed to the vector - or
@@ -139,7 +138,10 @@ fn serialize_chunk<'py, M: Mapping>(
     // the full serialization that would amount to duplicating the entire object in memory. We also
     // reduce potentially expensive database operations by not writing the same entry twice.
     if let Some(hash) = seen.get(&obj.as_ptr()) {
-        assert!(backrefs.is_none(), "already seen object was previously overlooked");
+        assert!(
+            backrefs.is_none(),
+            "already seen object was previously overlooked"
+        );
         v.extend_from_slice(hash.as_bytes());
         return Ok(());
     }

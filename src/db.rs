@@ -3,13 +3,13 @@ use pyo3::prelude::*;
 mod fsdb;
 #[cfg(feature = "iroh")]
 mod iroh;
+#[cfg(feature = "lsm-tree")]
+mod lsm_tree;
 mod nil;
 mod pydb;
 mod ram;
 #[cfg(feature = "sled")]
 mod sled;
-#[cfg(feature = "lsm-tree")]
-mod lsm_tree;
 
 pub fn populate_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(nil::hash, m)?)?;
