@@ -177,8 +177,7 @@ fn deserialize_chunk<'py, M: Mapping<Key: Hash>, I: std::iter::Iterator<Item = u
                     setstate.call1((state,))?;
                 } else if let Ok(items) = state.downcast_exact::<PyDict>() {
                     for (k, v) in items {
-                        let attrname: &str = k.extract()?; // TODO avoid extraction
-                        obj.setattr(attrname, v)?;
+                        obj.setattr(k.downcast_exact::<PyString>()?, v)?;
                     }
                 }
             }

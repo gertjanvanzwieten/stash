@@ -162,7 +162,7 @@ fn serialize_chunk<'py, M: Mapping>(
     // them one by one, or reducing it to a new form otherwise.
     if let Ok(s) = obj.downcast_exact::<PyString>() {
         v.push(token::STRING);
-        v.extend_from_slice(s.to_str()?.as_bytes());
+        v.extend_from_slice(s.to_cow()?.as_bytes());
     } else if let Ok(b) = obj.downcast_exact::<PyByteArray>() {
         v.push(token::BYTEARRAY);
         // SAFETY: We promise to not let the interpreter regain control or invoke any PyO3 APIs
@@ -377,7 +377,7 @@ fn extend_global(
 ) -> PyResult<()> {
     v.push(token::GLOBAL);
     if let Ok(module) = obj.getattr(intern!(obj.py(), "__module__")) {
-        v.extend_from_slice(module.extract::<&str>()?.as_bytes());
+        v.extend_from_slice(module.downcast_exact::<PyString>()?.to_cow()?.as_bytes());
     } else if let Some(module_name) = modules
         .iter()
         .filter_map(|(module_name, module)| match module.getattr(name) {
@@ -391,7 +391,7 @@ fn extend_global(
         v.extend_from_slice("__main__".as_bytes())
     }
     v.extend_from_slice(":".as_bytes());
-    v.extend_from_slice(name.to_str()?.as_bytes());
+    v.extend_from_slice(name.to_cow()?.as_bytes());
     Ok(())
 }
 
