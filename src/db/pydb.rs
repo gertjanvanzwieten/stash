@@ -15,7 +15,7 @@ use crate::{
 
 struct PyBytesWrapper<'py>(Bound<'py, PyBytes>);
 
-impl<'py> Deref for PyBytesWrapper<'py> {
+impl Deref for PyBytesWrapper<'_> {
     type Target = [u8];
     fn deref(&self) -> &Self::Target {
         self.0.as_bytes()
