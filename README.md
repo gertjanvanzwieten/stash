@@ -104,7 +104,8 @@ the protocol can be found [here](PROTOCOL.md).
 Stash is implemented in rust for minimum overhead. It also keeps track of
 object ids seen before during serialization, to avoid recursing into the same
 object several times over. Overall the speed of stash is roughly on par with
-that of pickle when combined with an in-memory database.
+that of pickle (slower, but not by much) when combined with an in-memory
+database.
 
 ## This all sounds great. Can I use it yet?
 

@@ -1,4 +1,4 @@
-import random, time, pickle, stash, tempfile, pathlib
+import random, time, pickle, stash, tempfile, pathlib, contextlib
 
 
 def mkobj(length, hashable):
@@ -46,30 +46,31 @@ def get_test_object():
         return pickle.loads(smax)
 
 
+@contextlib.contextmanager
+def measure(what):
+    T0 = time.perf_counter()
+    t0 = time.process_time()
+    yield
+    dT = time.perf_counter() - T0
+    dt = time.process_time() - t0
+    print(what, f'in {dT:.2f}s ({100*dt/dT:.0f}% CPU)')
+
+
 def run_test(db, obj):
-
     print(db)
-
-    T0 = time.perf_counter()
-    t0 = time.process_time()
-    h = db.dumps(obj)
-    dT = time.perf_counter() - T0
-    dt = time.process_time() - t0
-    print(f'dumped in {dT:.2f}s ({100*dt/dT:.0f}% CPU)')
-
-    T0 = time.perf_counter()
-    t0 = time.process_time()
-    obj_ = db.loads(h)
-    dT = time.perf_counter() - T0
-    dt = time.process_time() - t0
-    print(f'loaded in {dT:.2f}s ({100*dt/dT:.0f}% CPU)')
-
+    with measure('dumped'):
+        h = db.dumps(obj)
+    with measure('loaded'):
+        obj_ = db.loads(h)
     assert obj == obj_
 
 
 def run_all_tests():
 
     obj = get_test_object()
+
+    with measure('hashed'):
+        stash.hash(obj)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = pathlib.Path(tmpdir)
