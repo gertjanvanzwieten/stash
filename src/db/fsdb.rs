@@ -77,8 +77,9 @@ impl PyFsDB {
     fn py_new(path: PathBuf) -> Self {
         Self { path }
     }
-    fn dumps<'py>(&self, obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyBytes>> {
-        serialize(obj, &mut FsDB::new(self.path.clone(), Blake3))
+    #[pyo3(signature = (obj, /, *, strict=true))]
+    fn dumps<'py>(&self, obj: &Bound<'py, PyAny>, strict: bool) -> PyResult<Bound<'py, PyBytes>> {
+        serialize(obj, &mut FsDB::new(self.path.clone(), Blake3), strict)
     }
     fn loads<'py>(&self, obj: &'py Bound<'py, PyBytes>) -> PyResult<Bound<'py, PyAny>> {
         deserialize(obj, &FsDB::new(self.path.clone(), Blake3))

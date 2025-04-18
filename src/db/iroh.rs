@@ -66,9 +66,14 @@ impl PyIroh {
             client: Some(client),
         })
     }
-    fn dumps<'py>(&mut self, obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyBytes>> {
+    #[pyo3(signature = (obj, /, *, strict=true))]
+    fn dumps<'py>(
+        &mut self,
+        obj: &Bound<'py, PyAny>,
+        strict: bool,
+    ) -> PyResult<Bound<'py, PyBytes>> {
         let _guard = self.runtime.enter();
-        serialize(obj, self.client.as_mut().unwrap())
+        serialize(obj, self.client.as_mut().unwrap(), strict)
     }
     fn loads<'py>(&self, obj: &'py Bound<'py, PyBytes>) -> PyResult<Bound<'py, PyAny>> {
         let _guard = self.runtime.enter();

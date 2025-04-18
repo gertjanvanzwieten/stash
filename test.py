@@ -23,13 +23,12 @@ class Stash(unittest.TestCase):
     def check(self, obj, eq=lambda x: x):
         d = {}
         db = stash.PyDB(d)
-        b = db.dumps(obj)
-        obj_ = db.loads(b)
-        self.assertIs(type(obj), type(obj_))
-        self.assertEqual(eq(obj_), eq(obj))
-        s = d[b]
-        self.assertEqual(s[0], 0)
-        return s[1]
+        for strict in False, True:
+            b = db.dumps(obj, strict=strict)
+            obj_ = db.loads(b)
+            self.assertIs(type(obj), type(obj_))
+            self.assertEqual(eq(obj_), eq(obj))
+        return len(d[b])
 
     def test_int(self):
         self.assertEqual(self.check(-1), 2)
@@ -74,8 +73,15 @@ class Stash(unittest.TestCase):
         self.check('abc')
 
     def test_dict(self):
-        self.check({'a': 1, 'b': 2, 'c': 3})
-        self.check({1: 'a', 2: 'b', 3: 'c'})
+        d1 = {'a': 1, 'b': 2, 'c': 3}
+        self.check(d1)
+        d2 = {'b': 2, 'c': 3, 'a': 1}
+        self.check(d2)
+        d3 = {'b': 2, 'c': 3, 'a': 1}
+        self.check(d3)
+        self.assertEqual(stash.hash(d1), stash.hash(d2))
+        self.assertNotEqual(stash.hash(d1, strict=True), stash.hash(d2, strict=True))
+        self.assertEqual(stash.hash(d2, strict=True), stash.hash(d3, strict=True))
 
     def test_none(self):
         self.check(None)

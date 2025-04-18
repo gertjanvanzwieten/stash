@@ -26,25 +26,3 @@ hash:
 
 Note that, by this mechanism, only objects that are serialized to more than 255
 bytes are stored as separate entries in the database.
-
-In order to obtain a hash that is valid for equality testing, as well as
-maximize deduplication in storage, items of sets and dictionaries are sorted by
-their serialization prior to hashing. A consequence of this is that dictionary
-loses its insertion order. Other information that is necessarily lost is the
-distinction between "==" an "is" identities, as any hash that retains this
-information cannot simultaneously test equal for both situations.
-
-To retain these key properties, and be a drop-in solution for pickle, stash
-distinguishes between a comparison hash and a deserialization hash. The former
-is simply the hash of the object's serialized form, which does not typically
-correspond to a database entry. The latter is the hash of a traversal object,
-which does correspond to a database entry, and which is structured as:
-
-    [traversal-token] [chunk ...] [traversal info ...]
-
-The traversal info contains information that was written sequentially during
-derialization, and can likewise be processed in sequence during
-deserialization. For any chunk it indicates whether the object is to be newly
-formed, or referenced to an earlier formed object. Additionally, if the newly
-formed object is a dictionary, then the traversal info contains the insertion
-order, referencing chunks by their ordered index.

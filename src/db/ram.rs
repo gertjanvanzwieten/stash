@@ -57,8 +57,13 @@ impl PyRam {
             db: Ram::new(Blake3),
         })
     }
-    fn dumps<'py>(&mut self, obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyBytes>> {
-        serialize(obj, &mut self.db)
+    #[pyo3(signature = (obj, /, *, strict=true))]
+    fn dumps<'py>(
+        &mut self,
+        obj: &Bound<'py, PyAny>,
+        strict: bool,
+    ) -> PyResult<Bound<'py, PyBytes>> {
+        serialize(obj, &mut self.db, strict)
     }
     fn loads<'py>(&self, obj: &'py Bound<'py, PyBytes>) -> PyResult<Bound<'py, PyAny>> {
         deserialize(obj, &self.db)

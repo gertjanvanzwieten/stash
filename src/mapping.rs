@@ -11,11 +11,15 @@ pub trait Mapping {
     fn get_blob(&self, h: Self::Key) -> MappingResult<impl Deref<Target = [u8]>>;
     // default implementations
     fn get_blob_from_bytes(&self, b: &[u8]) -> MappingResult<impl Deref<Target = [u8]>> {
-        self.get_blob_from_bytes_exact(&b[..Self::Key::NBYTES])
-    }
-    fn get_blob_from_bytes_exact(&self, b: &[u8]) -> MappingResult<impl Deref<Target = [u8]>> {
         let hash = Self::Key::from_bytes(b).unwrap();
         self.get_blob(hash)
+    }
+    fn get_blob_and_tail<'a>(
+        &self,
+        b: &'a [u8],
+    ) -> MappingResult<(impl Deref<Target = [u8]>, &'a [u8])> {
+        let (left, right) = b.split_at(Self::Key::NBYTES);
+        Ok((self.get_blob_from_bytes(left)?, right))
     }
 }
 

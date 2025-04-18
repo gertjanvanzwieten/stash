@@ -66,8 +66,13 @@ impl PyLSMTree {
             db: LSMTree::new(path, Blake3)?,
         })
     }
-    fn dumps<'py>(&mut self, obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyBytes>> {
-        let retval = serialize(obj, &mut self.db);
+    #[pyo3(signature = (obj, /, *, strict=true))]
+    fn dumps<'py>(
+        &mut self,
+        obj: &Bound<'py, PyAny>,
+        strict: bool,
+    ) -> PyResult<Bound<'py, PyBytes>> {
+        let retval = serialize(obj, &mut self.db, strict);
         if retval.is_ok() {
             self.db.flush()?;
         }

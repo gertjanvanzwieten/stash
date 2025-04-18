@@ -1,4 +1,4 @@
-use crate::{bytes::Bytes, int::Int, mapping::Mapping, token, usize};
+use crate::{bytes::Bytes, int::Int, mapping::Mapping, token};
 use pyo3::{
     exceptions::PyTypeError,
     intern,
@@ -8,46 +8,35 @@ use pyo3::{
         PyTuple, PyType,
     },
 };
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::hash_map::HashMap;
 
 pub fn serialize<'py, M: Mapping>(
     obj: &Bound<'py, PyAny>,
     db: &mut M,
+    strict: bool,
 ) -> PyResult<Bound<'py, PyBytes>> {
-    let mut br = (Vec::new(), HashMap::new());
     let mut v: Vec<u8> = Vec::with_capacity(255);
-    v.push(token::TRAVERSE);
-    serialize_chunk(
-        obj,
-        db,
-        &mut v,
-        Some(&mut br),
-        &Helpers::new(obj.py())?,
-        &mut Vec::new(),
-        &mut HashMap::new(),
-    )?;
-    v.reserve(br.0.len()); // reserve at least one byte per number
-    for index in br.0.into_iter() {
-        v.extend(usize::encode(index))
+    let helpers = &Helpers::new(obj.py())?;
+    let keep_alive = &mut Vec::new();
+    if strict {
+        serialize_chunk(
+            obj,
+            db,
+            &mut v,
+            helpers,
+            keep_alive,
+            &mut HashMap::<PyID, Strict>::new(),
+        )?;
+    } else {
+        serialize_chunk(
+            obj,
+            db,
+            &mut v,
+            helpers,
+            keep_alive,
+            &mut HashMap::<PyID, NotStrict>::new(),
+        )?;
     }
-    let hash = db.put_blob(&v)?;
-    Ok(PyBytes::new(obj.py(), hash.as_bytes()))
-}
-
-pub fn serialize_notraverse<'py, M: Mapping>(
-    obj: &Bound<'py, PyAny>,
-    db: &mut M,
-) -> PyResult<Bound<'py, PyBytes>> {
-    let mut v: Vec<u8> = Vec::with_capacity(255);
-    serialize_chunk(
-        obj,
-        db,
-        &mut v,
-        None,
-        &Helpers::new(obj.py())?,
-        &mut Vec::new(),
-        &mut HashMap::new(),
-    )?;
     let hash;
     let h = if v[0] == 0 {
         &v[1..]
@@ -88,6 +77,78 @@ impl<'py> Helpers<'py> {
     }
 }
 
+type PyID = *mut pyo3::ffi::PyObject;
+type NotStrict = Box<[u8]>;
+type Strict = usize;
+
+trait Seen {
+    fn cached(&self, obj: &Bound<PyAny>, v: &mut Vec<u8>) -> bool;
+    fn sort<const N: usize, K: Bytes>(v: &mut [u8]);
+    fn store(&mut self, v: &[u8], obj: &Bound<PyAny>);
+}
+
+impl Seen for HashMap<PyID, NotStrict> {
+    fn cached(&self, obj: &Bound<PyAny>, v: &mut Vec<u8>) -> bool {
+        if let Some(b) = self.get(&obj.as_ptr()) {
+            v.extend_from_slice(b);
+            true
+        } else {
+            false
+        }
+    }
+    fn sort<const N: usize, K: Bytes>(v: &mut [u8]) {
+        let copy: Box<[u8]> = v.into();
+        let mut chunks = Vec::<&[u8]>::new();
+        let mut left;
+        let mut right = copy.as_ref();
+        while !right.is_empty() {
+            let mut i = 0;
+            for _ in 0..N {
+                let n = right[i];
+                i += 1 + if n == 0 { K::NBYTES } else { n as usize };
+            }
+            (left, right) = right.split_at(i);
+            chunks.push(left);
+        }
+        chunks.sort();
+        let mut left;
+        let mut right = v;
+        for chunk in chunks {
+            (left, right) = right.split_at_mut(chunk.len());
+            left.clone_from_slice(chunk);
+        }
+    }
+    fn store(&mut self, v: &[u8], obj: &Bound<PyAny>) {
+        if v.len() > 2 && obj.get_refcnt() > 2 {
+            let _ = self.insert(obj.as_ptr(), v.into());
+        }
+    }
+}
+
+impl Seen for HashMap<PyID, Strict> {
+    fn cached(&self, obj: &Bound<PyAny>, v: &mut Vec<u8>) -> bool {
+        if let Some(index) = self.get(&obj.as_ptr()) {
+            v.push(0);
+            let n = v.len();
+            v.push(token::REF);
+            let mut i = *index;
+            while i != 0 {
+                v.push(i as u8);
+                i >>= 8;
+            }
+            v[n - 1] = (v.len() - n) as u8;
+            true
+        } else {
+            false
+        }
+    }
+    fn sort<const N: usize, K: Bytes>(_v: &mut [u8]) {}
+    fn store(&mut self, _v: &[u8], obj: &Bound<PyAny>) {
+        let index = self.len();
+        let _ = self.insert(obj.as_ptr(), index);
+    }
+}
+
 // Serialize a Python object to a byte vector
 //
 // This routine takes an arbitrary Python object and appends its serialization to a byte vector.
@@ -102,57 +163,30 @@ impl<'py> Helpers<'py> {
 // * `backrefs` - Structure to keep track of object references and dictionary orderings.
 // * `helpers` - Helper object containing a `dispatch_table`, `modules` and `int` member.
 // * `keep_alive` - Python object vector to prevent garbage collection.
-// * `seen` - Hashmap with previously hashed objects.
-fn serialize_chunk<'py, M: Mapping>(
+// * `seen` - Hashmap with previously seen objects.
+fn serialize_chunk<'py, M: Mapping, S: Seen>(
     obj: &Bound<'py, PyAny>,
     db: &mut M,
     v: &mut Vec<u8>,
-    mut backrefs: Option<&mut (Vec<usize>, HashMap<*mut pyo3::ffi::PyObject, usize>)>,
     helpers: &Helpers<'py>,
     keep_alive: &mut Vec<Bound<'py, PyAny>>,
-    seen: &mut HashMap<*mut pyo3::ffi::PyObject, M::Key>,
+    seen: &mut S,
 ) -> PyResult<()> {
-    // The backrefs object is an optional Vector, Hashmap tuple to keep track of object aspects
-    // that are not represented in the object's hash. Here we check if `obj` was seen before, in
-    // which case its index (relative to the tip of the object stack) is pushed to the vector - or
-    // a zero value otherwise. In either case we need to continue down to form the hash, but since
-    // deserialization will skip recursion if an existing object can be referenced, `backrefs` is
-    // set to None in this situation to keep indices coherent.
-    if let Some(ref mut br) = backrefs {
-        let n = br.1.len();
-        // We trust that the `keep_alive` vec is doing its job keeping objects alive while we use
-        // their object ID as a key.
-        match br.1.entry(obj.as_ptr()) {
-            Entry::Occupied(e) => {
-                br.0.push(n - *e.get());
-                backrefs = None; // object will not be entered during deserialisation
-            }
-            Entry::Vacant(e) => {
-                e.insert(n);
-                br.0.push(0);
-            }
-        }
-    }
-
-    // The first byte is the length of the chunk. We write a zero now a go back to replace if with
-    // the actual length when we're done serializing, or leave it at zero in case the length
-    // exceeds 255 and the data needs to be hashed.
-    v.push(0);
-
     // The `seen` hashmap serves to speed up hashing by recognizing that an object was serialized
     // before. It overlaps with the backrefs hashmap in that it tracks previously seen objects, but
     // is limited to objects that resulted in long enough byte sequences to be hashed, and stores
     // this hash. This allows the result to be kept in memory as a database reference, rather than
     // the full serialization that would amount to duplicating the entire object in memory. We also
     // reduce potentially expensive database operations by not writing the same entry twice.
-    if let Some(hash) = seen.get(&obj.as_ptr()) {
-        assert!(
-            backrefs.is_none(),
-            "already seen object was previously overlooked"
-        );
-        v.extend_from_slice(hash.as_bytes());
+
+    if seen.cached(obj, v) {
         return Ok(());
     }
+
+    // The first byte is the length of the chunk. We write a zero now and go back to replace if
+    // with the actual length when we're done serializing, or leave it at zero in case the length
+    // exceeds 255 and the data needs to be hashed.
+    v.push(0);
 
     // Store the current length of the byte vector, so that we can compute and update the chunk
     // length afterward.
@@ -180,28 +214,12 @@ fn serialize_chunk<'py, M: Mapping>(
     } else if let Ok(l) = obj.downcast_exact::<PyList>() {
         v.push(token::LIST);
         for item in l {
-            serialize_chunk(
-                &item,
-                db,
-                v,
-                backrefs.as_deref_mut(),
-                helpers,
-                keep_alive,
-                seen,
-            )?;
+            serialize_chunk(&item, db, v, helpers, keep_alive, seen)?;
         }
     } else if let Ok(t) = obj.downcast_exact::<PyTuple>() {
         v.push(token::TUPLE);
         for item in t {
-            serialize_chunk(
-                &item,
-                db,
-                v,
-                backrefs.as_deref_mut(),
-                helpers,
-                keep_alive,
-                seen,
-            )?;
+            serialize_chunk(&item, db, v, helpers, keep_alive, seen)?;
         }
     } else if let Ok(s) = obj.downcast_exact::<PySet>() {
         v.push(token::SET);
@@ -211,61 +229,16 @@ fn serialize_chunk<'py, M: Mapping>(
         // problem for the back references, as the deserialization will need to undo this sorting
         // to maintain coherence of the object indices. To this end we perform an argsort in case
         // back references are present, and add it to the index vector in inverse order.
-        if let Some(ref mut br) = backrefs {
-            let mut chunks = Vec::with_capacity(s.len());
-            let n = br.0.len();
-            br.0.resize(n + s.len(), 0); // allocate space for item order prior to recursion
-            for (i, item) in s.iter().enumerate() {
-                let mut b = Vec::with_capacity(256);
-                serialize_chunk(&item, db, &mut b, Some(br), helpers, keep_alive, seen)?;
-                chunks.push((i, b));
-            }
-            chunks.sort_by(|(_, a), (_, b)| a.cmp(b));
-            for (j, (i, chunk)) in chunks.iter().enumerate() {
-                v.extend_from_slice(chunk);
-                br.0[n + i] = j;
-            }
-        } else {
-            let mut chunks = Vec::with_capacity(s.len());
-            for item in s.iter() {
-                let mut b = Vec::with_capacity(256);
-                serialize_chunk(&item, db, &mut b, None, helpers, keep_alive, seen)?;
-                chunks.push(b);
-            }
-            chunks.sort();
-            for chunk in chunks.iter() {
-                v.extend_from_slice(chunk);
-            }
+        for item in s.iter() {
+            serialize_chunk(&item, db, v, helpers, keep_alive, seen)?;
         }
+        S::sort::<1, M::Key>(&mut v[n + 1..]);
     } else if let Ok(s) = obj.downcast_exact::<PyFrozenSet>() {
         v.push(token::FROZENSET);
-        // See SET above.
-        if let Some(ref mut br) = backrefs {
-            let mut chunks = Vec::with_capacity(s.len());
-            let n = br.0.len();
-            br.0.resize(n + s.len(), 0); // allocate space
-            for (i, item) in s.iter().enumerate() {
-                let mut b = Vec::with_capacity(256);
-                serialize_chunk(&item, db, &mut b, Some(br), helpers, keep_alive, seen)?;
-                chunks.push((i, b));
-            }
-            chunks.sort_by(|(_, a), (_, b)| a.cmp(b));
-            for (j, (i, chunk)) in chunks.iter().enumerate() {
-                v.extend_from_slice(chunk);
-                br.0[n + i] = j;
-            }
-        } else {
-            let mut chunks = Vec::with_capacity(s.len());
-            for item in s.iter() {
-                let mut b = Vec::with_capacity(256);
-                serialize_chunk(&item, db, &mut b, None, helpers, keep_alive, seen)?;
-                chunks.push(b);
-            }
-            chunks.sort();
-            for chunk in chunks.iter() {
-                v.extend_from_slice(chunk);
-            }
+        for item in s.iter() {
+            serialize_chunk(&item, db, v, helpers, keep_alive, seen)?;
         }
+        S::sort::<1, M::Key>(&mut v[n + 1..]);
     } else if let Ok(s) = obj.downcast_exact::<PyDict>() {
         v.push(token::DICT);
         // Since a dictionary is an unordered object as far as the equality test is concerned, its
@@ -276,34 +249,11 @@ fn serialize_chunk<'py, M: Mapping>(
         // indices. To this end we perform an argsort in case back references are present, and add
         // it to the index vector in inverse order. This also restores the original dictionary's
         // insertion order.
-        if let Some(ref mut br) = backrefs {
-            let mut chunks = Vec::with_capacity(s.len());
-            let n = br.0.len();
-            br.0.resize(n + s.len(), 0); // allocate space
-            for (i, (key, value)) in s.iter().enumerate() {
-                let mut b = Vec::with_capacity(256);
-                serialize_chunk(&key, db, &mut b, Some(br), helpers, keep_alive, seen)?;
-                serialize_chunk(&value, db, &mut b, Some(br), helpers, keep_alive, seen)?;
-                chunks.push((i, b));
-            }
-            chunks.sort_by(|(_, a), (_, b)| a.cmp(b));
-            for (j, (i, chunk)) in chunks.iter().enumerate() {
-                v.extend_from_slice(chunk);
-                br.0[n + i] = j;
-            }
-        } else {
-            let mut chunks = Vec::with_capacity(s.len());
-            for (key, value) in s.iter() {
-                let mut b = Vec::with_capacity(256);
-                serialize_chunk(&key, db, &mut b, None, helpers, keep_alive, seen)?;
-                serialize_chunk(&value, db, &mut b, None, helpers, keep_alive, seen)?;
-                chunks.push(b);
-            }
-            chunks.sort();
-            for chunk in chunks.iter() {
-                v.extend_from_slice(chunk);
-            }
+        for (key, value) in s.iter() {
+            serialize_chunk(&key, db, v, helpers, keep_alive, seen)?;
+            serialize_chunk(&value, db, v, helpers, keep_alive, seen)?;
         }
+        S::sort::<2, M::Key>(&mut v[n + 1..]);
     } else if obj.is_none() {
         v.push(token::NONE);
     } else if let Ok(b) = obj.downcast_exact::<PyBool>() {
@@ -330,15 +280,7 @@ fn serialize_chunk<'py, M: Mapping>(
         if let Ok(t) = reduced.downcast_exact::<PyTuple>() {
             v.push(token::REDUCE);
             for item in t {
-                serialize_chunk(
-                    &item,
-                    db,
-                    v,
-                    backrefs.as_deref_mut(),
-                    helpers,
-                    keep_alive,
-                    seen,
-                )?;
+                serialize_chunk(&item, db, v, helpers, keep_alive, seen)?;
             }
             // Since the items in `reduced` are potentially newly formed, we bump its reference
             // count so we can safely use their IDs in the `backrefs` and `seen` hashmaps without
@@ -362,8 +304,8 @@ fn serialize_chunk<'py, M: Mapping>(
         let hash = db.put_blob(&v[n..])?;
         v.truncate(n);
         v.extend_from_slice(hash.as_bytes());
-        let _ = seen.insert(obj.as_ptr(), hash);
     }
+    seen.store(&v[n - 1..], obj);
 
     Ok(())
 }

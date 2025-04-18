@@ -1,4 +1,4 @@
-use crate::{bytes::Bytes, int::Int, mapping::Mapping, token, usize};
+use crate::{int::Int, mapping::Mapping, token};
 use pyo3::{
     exceptions::PyTypeError,
     intern,
@@ -14,18 +14,11 @@ pub fn deserialize<'py, M: Mapping<Key: Hash>>(
     obj: &Bound<'py, PyBytes>,
     db: &M,
 ) -> PyResult<Bound<'py, PyAny>> {
-    let b = db.get_blob_from_bytes_exact(obj.as_bytes())?;
-    assert!(
-        b[0] == token::TRAVERSE,
-        "can only deserialize chunks of type 'traverse' for now"
-    );
-    let n = chunk_length::<M>(b[1]);
-    let (chunk, tail) = b[1..].split_at(n);
-    let mut items: Vec<Option<Bound<PyAny>>> = Vec::new();
-    let mut backrefs = tail.iter().cloned();
+    let b = db.get_blob_from_bytes(obj.as_bytes())?;
+    let mut items: Vec<Bound<PyAny>> = Vec::new();
     let py = obj.py();
     let int = Int::new(py)?;
-    deserialize_chunk(chunk, db, &mut items, &mut backrefs, py, &int)
+    deserialize_chunk(&b, db, &mut items, py, &int)
 }
 
 // Deserialize a Python object from a byte stream
@@ -36,38 +29,28 @@ pub fn deserialize<'py, M: Mapping<Key: Hash>>(
 // * `b` - Byte vector to deserialize into a Python object
 // * `db` - Database to load hashed blobs from.
 // * `items` - Vector of previously deserialized objects for potential backreferencing
-// * `backrefs` - Structure to keep track of object references and dictionary orderings.
 // * `py` - A marker token that represents holding the GIL.
 // * `int` - Helper object to facilitate deserialization of integers.
-fn deserialize_chunk<'py, M: Mapping<Key: Hash>, I: std::iter::Iterator<Item = u8>>(
+fn deserialize_chunk<'py, M: Mapping<Key: Hash>>(
     b: &[u8],
     db: &M,
-    items: &mut Vec<Option<Bound<'py, PyAny>>>,
-    backrefs: &mut I,
+    items: &mut Vec<Bound<'py, PyAny>>,
     py: Python<'py>,
     int: &Int<'py>,
 ) -> PyResult<Bound<'py, PyAny>> {
-    let nitems = items.len();
-    let index = usize::decode(backrefs);
-    if index != 0 {
-        return Ok(items[nitems - index]
-            .as_ref()
-            .expect("referenced object is not yet finished")
-            .clone());
-    }
-    items.push(None);
+    let (token, mut data) = b.split_at(1);
 
-    let owned;
-    let s = if b[0] == 0 {
-        owned = db.get_blob_from_bytes(&b[1..])?;
-        owned.as_ref()
-    } else {
-        &b[1..1 + usize::from(b[0])]
-    };
-    let token = s[0];
-    let data = &s[1..];
-
-    let obj = match token {
+    let mut owned;
+    let obj = match token[0] {
+        token::REF => {
+            let mut index: usize = 0;
+            let mut n = 0;
+            for b in data {
+                index |= (*b as usize) << n;
+                n += 8;
+            }
+            return Ok(items[index].clone());
+        }
         token::BYTES => PyBytes::new(py, data).into_any(),
         token::BYTEARRAY => PyByteArray::new(py, data).into_any(),
         token::STRING => PyString::new(py, std::str::from_utf8(data)?).into_any(),
@@ -75,74 +58,115 @@ fn deserialize_chunk<'py, M: Mapping<Key: Hash>, I: std::iter::Iterator<Item = u
         token::FLOAT => PyFloat::new(py, f64::from_le_bytes(data.try_into()?)).into_any(),
         token::LIST => {
             let obj = PyList::empty(py);
-            let mut i = 0;
-            while i < data.len() {
-                obj.append(deserialize_chunk(&data[i..], db, items, backrefs, py, int)?)?;
-                i += chunk_length::<M>(data[i]);
+            while !data.is_empty() {
+                obj.append(deserialize_chunk(
+                    if data[0] == 0 {
+                        (owned, data) = db.get_blob_and_tail(&data[1..])?;
+                        owned.as_ref()
+                    } else {
+                        let chunk;
+                        (chunk, data) = data[1..].split_at(data[0] as usize);
+                        chunk
+                    },
+                    db,
+                    items,
+                    py,
+                    int,
+                )?)?;
             }
             obj.into_any()
         }
         token::TUPLE => {
             let mut objs = Vec::new();
-            let mut i = 0;
-            while i < data.len() {
-                objs.push(deserialize_chunk(&data[i..], db, items, backrefs, py, int)?);
-                i += chunk_length::<M>(data[i]);
+            while !data.is_empty() {
+                objs.push(deserialize_chunk(
+                    if data[0] == 0 {
+                        (owned, data) = db.get_blob_and_tail(&data[1..])?;
+                        owned.as_ref()
+                    } else {
+                        let chunk;
+                        (chunk, data) = data[1..].split_at(data[0] as usize);
+                        chunk
+                    },
+                    db,
+                    items,
+                    py,
+                    int,
+                )?);
             }
             PyTuple::new(py, objs)?.into_any()
         }
         token::SET => {
-            let mut offsets = Vec::new();
-            let mut indices = Vec::new();
-            let mut i: usize = 0;
-            while i < data.len() {
-                indices.push(usize::decode(backrefs));
-                offsets.push(i);
-                i += chunk_length::<M>(data[i]);
-            }
-            assert!(i == data.len(), "invalid data length for set");
             let obj = PySet::empty(py)?;
-            for index in indices {
-                let offset = offsets[index];
-                let item = deserialize_chunk(&data[offset..], db, items, backrefs, py, int)?;
-                obj.add(item)?;
+            while !data.is_empty() {
+                obj.add(deserialize_chunk(
+                    if data[0] == 0 {
+                        (owned, data) = db.get_blob_and_tail(&data[1..])?;
+                        owned.as_ref()
+                    } else {
+                        let chunk;
+                        (chunk, data) = data[1..].split_at(data[0] as usize);
+                        chunk
+                    },
+                    db,
+                    items,
+                    py,
+                    int,
+                )?)?;
             }
             obj.into_any()
         }
         token::FROZENSET => {
-            let mut offsets = Vec::new();
-            let mut indices = Vec::new();
-            let mut i: usize = 0;
-            while i < data.len() {
-                indices.push(usize::decode(backrefs));
-                offsets.push(i);
-                i += chunk_length::<M>(data[i]);
+            let mut objs = Vec::new();
+            while !data.is_empty() {
+                objs.push(deserialize_chunk(
+                    if data[0] == 0 {
+                        (owned, data) = db.get_blob_and_tail(&data[1..])?;
+                        owned.as_ref()
+                    } else {
+                        let chunk;
+                        (chunk, data) = data[1..].split_at(data[0] as usize);
+                        chunk
+                    },
+                    db,
+                    items,
+                    py,
+                    int,
+                )?);
             }
-            assert!(i == data.len(), "invalid data length for frozenset");
-            let items = indices
-                .into_iter()
-                .map(|index| {
-                    deserialize_chunk(&data[offsets[index]..], db, items, backrefs, py, int)
-                })
-                .collect::<PyResult<Vec<_>>>()?;
-            PyFrozenSet::new(py, items)?.into_any()
+            PyFrozenSet::new(py, objs)?.into_any()
         }
         token::DICT => {
-            let mut offsets = Vec::new();
-            let mut indices = Vec::new();
-            let mut i: usize = 0;
-            while i < data.len() {
-                indices.push(usize::decode(backrefs));
-                let j = i + chunk_length::<M>(data[i]);
-                offsets.push((i, j));
-                i = j + chunk_length::<M>(data[j]);
-            }
-            assert!(i == data.len(), "invalid data length for dict");
             let d = PyDict::new(py);
-            for index in indices {
-                let (i, j) = offsets[index];
-                let k = deserialize_chunk(&data[i..], db, items, backrefs, py, int)?;
-                let v = deserialize_chunk(&data[j..], db, items, backrefs, py, int)?;
+            while !data.is_empty() {
+                let k = deserialize_chunk(
+                    if data[0] == 0 {
+                        (owned, data) = db.get_blob_and_tail(&data[1..])?;
+                        owned.as_ref()
+                    } else {
+                        let chunk;
+                        (chunk, data) = data[1..].split_at(data[0] as usize);
+                        chunk
+                    },
+                    db,
+                    items,
+                    py,
+                    int,
+                )?;
+                let v = deserialize_chunk(
+                    if data[0] == 0 {
+                        (owned, data) = db.get_blob_and_tail(&data[1..])?;
+                        owned.as_ref()
+                    } else {
+                        let chunk;
+                        (chunk, data) = data[1..].split_at(data[0] as usize);
+                        chunk
+                    },
+                    db,
+                    items,
+                    py,
+                    int,
+                )?;
                 d.set_item(k, v)?;
             }
             d.into_any()
@@ -158,10 +182,21 @@ fn deserialize_chunk<'py, M: Mapping<Key: Hash>, I: std::iter::Iterator<Item = u
         }
         token::REDUCE => {
             let mut objs = Vec::new();
-            let mut i = 0;
-            while i < data.len() {
-                objs.push(deserialize_chunk(&data[i..], db, items, backrefs, py, int)?);
-                i += chunk_length::<M>(data[i]);
+            while !data.is_empty() {
+                objs.push(deserialize_chunk(
+                    if data[0] == 0 {
+                        (owned, data) = db.get_blob_and_tail(&data[1..])?;
+                        owned.as_ref()
+                    } else {
+                        let chunk;
+                        (chunk, data) = data[1..].split_at(data[0] as usize);
+                        chunk
+                    },
+                    db,
+                    items,
+                    py,
+                    int,
+                )?);
             }
             let mut it = objs.into_iter();
             let func = it
@@ -187,14 +222,6 @@ fn deserialize_chunk<'py, M: Mapping<Key: Hash>, I: std::iter::Iterator<Item = u
         _ => return Err(PyTypeError::new_err("cannot load object")),
     };
 
-    items[nitems] = Some(obj.clone());
+    items.push(obj.clone());
     Ok(obj)
-}
-
-fn chunk_length<M: Mapping>(nbytes: u8) -> usize {
-    1 + if nbytes != 0 {
-        nbytes.into()
-    } else {
-        M::Key::NBYTES
-    }
 }

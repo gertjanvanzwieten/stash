@@ -52,8 +52,9 @@ impl PyDB {
     fn py_new(pydb: PyObject) -> PyResult<Self> {
         Ok(Self { pydb })
     }
-    fn dumps<'py>(&self, obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyBytes>> {
-        serialize(obj, &mut self.pydb.bind(obj.py()))
+    #[pyo3(signature = (obj, /, *, strict=true))]
+    fn dumps<'py>(&self, obj: &Bound<'py, PyAny>, strict: bool) -> PyResult<Bound<'py, PyBytes>> {
+        serialize(obj, &mut self.pydb.bind(obj.py()), strict)
     }
     fn loads<'py>(&self, obj: &'py Bound<'py, PyBytes>) -> PyResult<Bound<'py, PyAny>> {
         deserialize(obj, &self.pydb.bind(obj.py()))
