@@ -75,6 +75,41 @@ impl<'py> Helpers<'py> {
     fn isfunction(&self, obj: &Bound<'py, PyAny>) -> PyResult<bool> {
         obj.is_instance(&self.function_type)
     }
+    fn extend_global(
+        &self,
+        v: &mut Vec<u8>,
+        obj: &Bound<PyAny>,
+        name: &Bound<PyString>,
+    ) -> PyResult<()> {
+        v.push(token::GLOBAL);
+        if let Ok(module) = obj.getattr(intern!(obj.py(), "__module__")) {
+            v.extend_from_slice(module.downcast_exact::<PyString>()?.to_cow()?.as_bytes());
+        } else if let Some(module_name) = self
+            .modules
+            .iter()
+            .filter_map(|(module_name, module)| match module.getattr(name) {
+                Ok(found_obj) if found_obj.is(obj) => Some(module_name),
+                _ => None,
+            })
+            .next()
+        {
+            v.extend_from_slice(module_name.as_bytes());
+        } else {
+            v.extend_from_slice("__main__".as_bytes())
+        }
+        v.extend_from_slice(":".as_bytes());
+        v.extend_from_slice(name.to_cow()?.as_bytes());
+        Ok(())
+    }
+    fn get_reduce(&self, objtype: Bound<'py, PyType>) -> PyResult<Option<Bound<'py, PyAny>>> {
+        if let Some(reduce) = self.dispatch_table.get_item(&objtype)? {
+            Ok(Some(reduce))
+        } else if let Ok(reduce) = objtype.getattr(intern!(objtype.py(), "__reduce__")) {
+            Ok(Some(reduce))
+        } else {
+            Ok(None)
+        }
+    }
 }
 
 type PyID = *mut pyo3::ffi::PyObject;
@@ -264,8 +299,7 @@ fn serialize_chunk<'py, M: Mapping, S: Seen>(
         });
     } else if helpers.isfunction(obj)? {
         // A function object is stored by its qualified name.
-        extend_global(
-            &helpers.modules,
+        helpers.extend_global(
             v,
             obj,
             obj.getattr(intern!(obj.py(), "__name__"))?
@@ -273,8 +307,8 @@ fn serialize_chunk<'py, M: Mapping, S: Seen>(
         )?;
     } else if let Ok(t) = obj.downcast_exact::<PyType>() {
         // A type object is stored by its qualified name.
-        extend_global(&helpers.modules, v, obj, &t.qualname()?)?;
-    } else if let Some(reduce) = get_reduce(&helpers.dispatch_table, obj.get_type())? {
+        helpers.extend_global(v, obj, &t.qualname()?)?;
+    } else if let Some(reduce) = helpers.get_reduce(obj.get_type())? {
         let reduced = reduce.call1((obj,))?;
         // The reduce operation can either return a qualified name, or a tuple with a reduced form.
         if let Ok(t) = reduced.downcast_exact::<PyTuple>() {
@@ -287,7 +321,7 @@ fn serialize_chunk<'py, M: Mapping, S: Seen>(
             // risking them being reused by other objects down the line.
             keep_alive.push(reduced);
         } else if let Ok(s) = reduced.downcast_exact::<PyString>() {
-            extend_global(&helpers.modules, v, obj, s)?;
+            helpers.extend_global(v, obj, s)?;
         } else {
             return Err(PyTypeError::new_err("invalid return value for reduce"));
         }
@@ -308,43 +342,4 @@ fn serialize_chunk<'py, M: Mapping, S: Seen>(
     seen.store(&v[n - 1..], obj);
 
     Ok(())
-}
-
-fn extend_global(
-    modules: &HashMap<String, Bound<PyAny>>,
-    v: &mut Vec<u8>,
-    obj: &Bound<PyAny>,
-    name: &Bound<PyString>,
-) -> PyResult<()> {
-    v.push(token::GLOBAL);
-    if let Ok(module) = obj.getattr(intern!(obj.py(), "__module__")) {
-        v.extend_from_slice(module.downcast_exact::<PyString>()?.to_cow()?.as_bytes());
-    } else if let Some(module_name) = modules
-        .iter()
-        .filter_map(|(module_name, module)| match module.getattr(name) {
-            Ok(found_obj) if found_obj.is(obj) => Some(module_name),
-            _ => None,
-        })
-        .next()
-    {
-        v.extend_from_slice(module_name.as_bytes());
-    } else {
-        v.extend_from_slice("__main__".as_bytes())
-    }
-    v.extend_from_slice(":".as_bytes());
-    v.extend_from_slice(name.to_cow()?.as_bytes());
-    Ok(())
-}
-
-fn get_reduce<'py>(
-    dispatch_table: &Bound<'py, PyDict>,
-    objtype: Bound<'py, PyType>,
-) -> PyResult<Option<Bound<'py, PyAny>>> {
-    if let Some(reduce) = dispatch_table.get_item(&objtype)? {
-        Ok(Some(reduce))
-    } else if let Ok(reduce) = objtype.getattr(intern!(objtype.py(), "__reduce__")) {
-        Ok(Some(reduce))
-    } else {
-        Ok(None)
-    }
 }
