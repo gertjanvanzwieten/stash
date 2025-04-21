@@ -24,8 +24,8 @@ class Stash(unittest.TestCase):
         d = {}
         db = stash.PyDB(d)
         for strict in False, True:
-            b = db.dumps(obj, strict=strict)
-            obj_ = db.loads(b)
+            b = db.hash(obj, strict=strict)
+            obj_ = db.unhash(b)
             self.assertIs(type(obj), type(obj_))
             self.assertEqual(eq(obj_), eq(obj))
         return len(d[b])
@@ -112,8 +112,8 @@ class Stash(unittest.TestCase):
     def test_dedup(self):
         db = stash.PyDB({})
         bigobj = b'abc' * 999
-        b = db.dumps([bigobj, bigobj])
-        bigobj1, bigobj2 = db.loads(b)
+        b = db.hash([bigobj, bigobj])
+        bigobj1, bigobj2 = db.unhash(b)
         self.assertIs(bigobj1, bigobj2)
         self.assertIsNot(bigobj1, bigobj)
         self.assertEqual(bigobj1, bigobj)
