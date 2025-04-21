@@ -9,7 +9,7 @@ use crate::{
 };
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, hash_map::Entry},
     hash::{BuildHasher, Hash},
     ops::Deref,
 };
@@ -32,9 +32,15 @@ impl<G: KeyGenerator<Key: Hash>, S: BuildHasher> Mapping for Ram<G, S> {
     type Key = G::Key;
     fn put_blob(&mut self, b: impl AsRef<[u8]>) -> MappingResult<Self::Key> {
         let h = self.keygen.digest(b.as_ref());
-        self.hashmap
-            .entry(h.clone())
-            .or_insert_with(|| b.as_ref().to_vec());
+        match self.hashmap.entry(h.clone()) {
+            Entry::Occupied(e) =>
+                if e.get() != b.as_ref() {
+                    return Err(MappingError::collision(&h));
+                }
+            Entry::Vacant(e) => {
+                e.insert_entry(b.as_ref().to_vec());
+            }
+        }
         Ok(h)
     }
     fn get_blob(&self, h: Self::Key) -> MappingResult<impl Deref<Target = [u8]>> {

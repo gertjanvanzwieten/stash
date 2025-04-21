@@ -28,7 +28,14 @@ impl<G: KeyGenerator> Mapping for Sled<G> {
     type Key = G::Key;
     fn put_blob(&mut self, b: impl AsRef<[u8]>) -> MappingResult<Self::Key> {
         let h = self.keygen.digest(b.as_ref());
-        self.db.insert(h.as_bytes(), b.as_ref())?;
+        if let Some(v) = self.db.get(h.as_bytes())? {
+            if v.as_ref() != b.as_ref() {
+                return Err(MappingError::collision(&h));
+            }
+        }
+        else {
+            self.db.insert(h.as_bytes(), b.as_ref())?;
+        }
         Ok(h)
     }
     fn get_blob(&self, h: Self::Key) -> MappingResult<impl Deref<Target = [u8]>> {

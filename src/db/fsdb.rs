@@ -9,7 +9,7 @@ use crate::{
     serialize::serialize,
 };
 
-use std::{fmt::Write as FmtWrite, fs::OpenOptions, io::Write, ops::Deref, path::PathBuf};
+use std::{fmt::Write as FmtWrite, fs::File, io::{Read, Write, Result as IoResult}, ops::Deref, path::PathBuf};
 
 pub struct FsDB<G> {
     path: PathBuf,
@@ -40,18 +40,33 @@ impl<G: KeyGenerator> FsDB<G> {
     }
 }
 
+fn file_equals(mut file: File, mut data: &[u8]) -> IoResult<bool> {
+    let mut buf = [0; 131072]; // 128 KB; https://eklitzke.org/efficient-file-copying-on-linux
+    loop {
+        let n = file.read(&mut buf)?;
+        if n == 0 {
+            return Ok(data.is_empty());
+        }
+        if n > data.len() || buf[..n] != data[..n] {
+            return Ok(false);
+        }
+        data = &data[n..];
+    }
+}
+
 impl<G: KeyGenerator> Mapping for FsDB<G> {
     type Key = G::Key;
     fn put_blob(&mut self, b: impl AsRef<[u8]>) -> MappingResult<Self::Key> {
         let h = self.keygen.digest(b.as_ref());
         let path = self.path_for(&h);
-        if !path.is_file() {
+        if let Ok(f) = File::open(&path) {
+            if ! file_equals(f, b.as_ref())? {
+                return Err(MappingError::collision(&h));
+            }
+        }
+        else {
             std::fs::create_dir_all(path.parent().unwrap())?;
-            OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(path)?
-                .write_all(b.as_ref())?;
+            File::create_new(&path)?.write_all(b.as_ref())?;
         }
         Ok(h)
     }

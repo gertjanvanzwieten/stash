@@ -34,7 +34,14 @@ impl<G: KeyGenerator> Mapping for LSMTree<G> {
     type Key = G::Key;
     fn put_blob(&mut self, b: impl AsRef<[u8]>) -> MappingResult<Self::Key> {
         let h = self.keygen.digest(b.as_ref());
-        self.tree.insert(h.as_bytes(), b, /* sequence number */ 0);
+        if let Some(v) = self.tree.get(h.as_bytes())? {
+            if v.as_ref() != b.as_ref() {
+                return Err(MappingError::collision(&h));
+            }
+        }
+        else {
+            self.tree.insert(h.as_bytes(), b, /* sequence number */ 0);
+        }
         Ok(h)
     }
     fn get_blob(&self, h: Self::Key) -> MappingResult<impl Deref<Target = [u8]>> {

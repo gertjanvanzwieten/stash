@@ -1,6 +1,6 @@
 use crate::{bytes::Bytes, hex::Hex};
 use pyo3::{
-    exceptions::{PyException, PyKeyError},
+    exceptions::{PyException, PyKeyError, PyLookupError},
     PyErr,
 };
 use std::{fmt::Display, ops::Deref};
@@ -25,6 +25,7 @@ pub trait Mapping {
 
 pub enum MappingError {
     NotFound(Vec<u8>),
+    Collision(Vec<u8>),
     IoError(std::io::Error),
     PyError(PyErr),
     Dyn(Box<dyn std::error::Error>),
@@ -34,12 +35,16 @@ impl MappingError {
     pub fn not_found(b: &impl Bytes) -> Self {
         Self::NotFound(b.as_bytes().into())
     }
+    pub fn collision(b: &impl Bytes) -> Self {
+        Self::Collision(b.as_bytes().into())
+    }
 }
 
 impl Display for MappingError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             MappingError::NotFound(hash) => write!(f, "Not found: {}", Hex(hash)),
+            MappingError::Collision(hash) => write!(f, "Hash collision: {}", Hex(hash)),
             MappingError::IoError(err) => write!(f, "{}", err),
             MappingError::PyError(err) => write!(f, "{}", err),
             MappingError::Dyn(err) => write!(f, "{}", err),
@@ -71,6 +76,7 @@ impl From<MappingError> for PyErr {
     fn from(err: MappingError) -> Self {
         match err {
             MappingError::NotFound(hash) => PyErr::new::<PyKeyError, _>(format!("{}", Hex(&hash))),
+            MappingError::Collision(hash) => PyErr::new::<PyLookupError, _>(format!("hash collision encountered for {}", Hex(&hash))),
             MappingError::PyError(py_error) => py_error,
             MappingError::IoError(err) => err.into(),
             MappingError::Dyn(err) => PyErr::new::<PyException, _>(format!("{}", err)),
