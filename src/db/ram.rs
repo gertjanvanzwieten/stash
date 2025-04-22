@@ -32,7 +32,7 @@ impl Put for Ram {
 }
 
 impl Get for Ram {
-    fn get_blob(&self, h: Key) -> MappingResult<impl Deref<Target = [u8]>> {
+    fn get(&self, h: Key) -> MappingResult<impl Deref<Target = [u8]>> {
         self.0
             .get(&h)
             .map_or_else(|| Err(MappingError::NotFound(h)), |v| Ok(v.deref()))

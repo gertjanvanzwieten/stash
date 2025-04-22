@@ -38,7 +38,7 @@ impl Put for &Bound<'_, PyAny> {
 }
 
 impl Get for &Bound<'_, PyAny> {
-    fn get_blob(&self, h: Key) -> MappingResult<impl Deref<Target = [u8]>> {
+    fn get(&self, h: Key) -> MappingResult<impl Deref<Target = [u8]>> {
         let item = self
             .get_item(PyBytes::new(self.py(), &h))?
             .downcast_exact::<PyBytes>()?

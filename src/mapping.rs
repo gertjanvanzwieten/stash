@@ -26,17 +26,11 @@ pub trait Put {
 }
 
 pub trait Get {
-    fn get_blob(&self, h: Key) -> MappingResult<impl Deref<Target = [u8]>>;
-    fn get_blob_from_bytes(&self, b: &[u8]) -> MappingResult<impl Deref<Target = [u8]>> {
-        let hash = Key::from_bytes(b).unwrap();
-        self.get_blob(hash)
-    }
-    fn get_blob_and_tail<'a>(
-        &self,
-        b: &'a [u8],
-    ) -> MappingResult<(impl Deref<Target = [u8]>, &'a [u8])> {
+    fn get(&self, h: Key) -> MappingResult<impl Deref<Target = [u8]>>;
+    // default implementation
+    fn get_blob<'a>(&self, b: &'a [u8]) -> MappingResult<(impl Deref<Target = [u8]>, &'a [u8])> {
         let (left, right) = b.split_at(Key::NBYTES);
-        Ok((self.get_blob_from_bytes(left)?, right))
+        Ok((self.get(left.try_into().unwrap())?, right))
     }
 }
 

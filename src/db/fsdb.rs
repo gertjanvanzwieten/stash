@@ -69,7 +69,7 @@ impl Put for FsDB {
 }
 
 impl Get for FsDB {
-    fn get_blob(&self, h: Key) -> MappingResult<impl Deref<Target = [u8]>> {
+    fn get(&self, h: Key) -> MappingResult<impl Deref<Target = [u8]>> {
         std::fs::read(self.path_for(&h)).map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
                 MappingError::NotFound(h)

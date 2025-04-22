@@ -10,7 +10,7 @@ use pyo3::{
 };
 
 pub fn deserialize<'py, M: Get>(obj: &Bound<'py, PyBytes>, db: &M) -> PyResult<Bound<'py, PyAny>> {
-    let b = db.get_blob_from_bytes(obj.as_bytes())?;
+    let b = db.get(obj.as_bytes().try_into().unwrap())?;
     let py = obj.py();
     let int = Int::new(py)?;
     deserialize_chunk(&b, db, py, &int)
@@ -45,7 +45,7 @@ fn deserialize_chunk<'py, M: Get>(
             while !data.is_empty() {
                 obj.append(deserialize_chunk(
                     if data[0] == 0 {
-                        (owned, data) = db.get_blob_and_tail(&data[1..])?;
+                        (owned, data) = db.get_blob(&data[1..])?;
                         owned.as_ref()
                     } else {
                         let chunk;
@@ -64,7 +64,7 @@ fn deserialize_chunk<'py, M: Get>(
             while !data.is_empty() {
                 objs.push(deserialize_chunk(
                     if data[0] == 0 {
-                        (owned, data) = db.get_blob_and_tail(&data[1..])?;
+                        (owned, data) = db.get_blob(&data[1..])?;
                         owned.as_ref()
                     } else {
                         let chunk;
@@ -83,7 +83,7 @@ fn deserialize_chunk<'py, M: Get>(
             while !data.is_empty() {
                 obj.add(deserialize_chunk(
                     if data[0] == 0 {
-                        (owned, data) = db.get_blob_and_tail(&data[1..])?;
+                        (owned, data) = db.get_blob(&data[1..])?;
                         owned.as_ref()
                     } else {
                         let chunk;
@@ -102,7 +102,7 @@ fn deserialize_chunk<'py, M: Get>(
             while !data.is_empty() {
                 objs.push(deserialize_chunk(
                     if data[0] == 0 {
-                        (owned, data) = db.get_blob_and_tail(&data[1..])?;
+                        (owned, data) = db.get_blob(&data[1..])?;
                         owned.as_ref()
                     } else {
                         let chunk;
@@ -121,7 +121,7 @@ fn deserialize_chunk<'py, M: Get>(
             while !data.is_empty() {
                 let k = deserialize_chunk(
                     if data[0] == 0 {
-                        (owned, data) = db.get_blob_and_tail(&data[1..])?;
+                        (owned, data) = db.get_blob(&data[1..])?;
                         owned.as_ref()
                     } else {
                         let chunk;
@@ -134,7 +134,7 @@ fn deserialize_chunk<'py, M: Get>(
                 )?;
                 let v = deserialize_chunk(
                     if data[0] == 0 {
-                        (owned, data) = db.get_blob_and_tail(&data[1..])?;
+                        (owned, data) = db.get_blob(&data[1..])?;
                         owned.as_ref()
                     } else {
                         let chunk;
@@ -163,7 +163,7 @@ fn deserialize_chunk<'py, M: Get>(
             while !data.is_empty() {
                 objs.push(deserialize_chunk(
                     if data[0] == 0 {
-                        (owned, data) = db.get_blob_and_tail(&data[1..])?;
+                        (owned, data) = db.get_blob(&data[1..])?;
                         owned.as_ref()
                     } else {
                         let chunk;
