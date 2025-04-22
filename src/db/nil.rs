@@ -1,26 +1,24 @@
 use pyo3::{pyfunction, types::PyBytes, Bound, PyAny, PyResult};
 
 use crate::{
-    keygen::{Blake3, KeyGenerator},
-    mapping::{Mapping, MappingError, MappingResult},
+    mapping::{Mapping, MappingError, MappingResult, Key},
     serialize::serialize,
 };
 
-use std::{hash::Hash, ops::Deref};
+use std::ops::Deref;
 
-pub struct Nil<G: KeyGenerator>(G);
+pub struct Nil;
 
-impl<G: KeyGenerator<Key: Hash>> Mapping for Nil<G> {
-    type Key = G::Key;
-    fn put_blob(&mut self, b: impl AsRef<[u8]>) -> MappingResult<Self::Key> {
-        Ok(self.0.digest(b.as_ref()))
+impl Mapping for Nil {
+    fn put(&mut self, _h: Key, _b: impl AsRef<[u8]>) -> MappingResult<()> {
+        Ok(())
     }
-    fn get_blob(&self, h: Self::Key) -> MappingResult<impl Deref<Target = [u8]>> {
-        Err::<Vec<u8>, _>(MappingError::not_found(&h))
+    fn get_blob(&self, h: Key) -> MappingResult<impl Deref<Target = [u8]>> {
+        Err::<Vec<u8>, _>(MappingError::NotFound(h))
     }
 }
 
 #[pyfunction]
 pub fn hash<'py>(obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyBytes>> {
-    serialize(obj, &mut Nil(Blake3))
+    serialize(obj, &mut Nil)
 }

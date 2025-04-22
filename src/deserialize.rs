@@ -8,9 +8,8 @@ use pyo3::{
         PyTuple,
     },
 };
-use std::hash::Hash;
 
-pub fn deserialize<'py, M: Mapping<Key: Hash>>(
+pub fn deserialize<'py, M: Mapping>(
     obj: &Bound<'py, PyBytes>,
     db: &M,
 ) -> PyResult<Bound<'py, PyAny>> {
@@ -29,7 +28,7 @@ pub fn deserialize<'py, M: Mapping<Key: Hash>>(
 // * `db` - Database to load hashed blobs from.
 // * `py` - A marker token that represents holding the GIL.
 // * `int` - Helper object to facilitate deserialization of integers.
-fn deserialize_chunk<'py, M: Mapping<Key: Hash>>(
+fn deserialize_chunk<'py, M: Mapping>(
     b: &[u8],
     db: &M,
     py: Python<'py>,

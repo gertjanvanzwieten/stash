@@ -1,4 +1,4 @@
-use crate::{bytes::Bytes, int::Int, mapping::Mapping, token};
+use crate::{bytes::Bytes, int::Int, mapping::{Mapping, Key}, token};
 use pyo3::{
     exceptions::PyTypeError,
     intern,
@@ -93,7 +93,7 @@ impl<'py> Helpers<'py> {
     }
 }
 
-fn sort_chunks<const N: usize, K: Bytes>(v: &mut [u8]) {
+fn sort_chunks<const N: usize>(v: &mut [u8]) {
     let copy: Box<[u8]> = v.into();
     let mut chunks = Vec::<&[u8]>::new();
     let mut left;
@@ -102,7 +102,7 @@ fn sort_chunks<const N: usize, K: Bytes>(v: &mut [u8]) {
         let mut i = 0;
         for _ in 0..N {
             let n = right[i];
-            i += 1 + if n == 0 { K::NBYTES } else { n as usize };
+            i += 1 + if n == 0 { Key::NBYTES } else { n as usize };
         }
         (left, right) = right.split_at(i);
         chunks.push(left);
@@ -201,13 +201,13 @@ fn serialize_chunk<'py, M: Mapping>(
         for item in s.iter() {
             serialize_chunk(&item, db, v, helpers, keep_alive, seen)?;
         }
-        sort_chunks::<1, M::Key>(&mut v[n + 1..]);
+        sort_chunks::<1>(&mut v[n + 1..]);
     } else if let Ok(s) = obj.downcast_exact::<PyFrozenSet>() {
         v.push(token::FROZENSET);
         for item in s.iter() {
             serialize_chunk(&item, db, v, helpers, keep_alive, seen)?;
         }
-        sort_chunks::<1, M::Key>(&mut v[n + 1..]);
+        sort_chunks::<1>(&mut v[n + 1..]);
     } else if let Ok(s) = obj.downcast_exact::<PyDict>() {
         v.push(token::DICT);
         // Since a dictionary is an unordered object as far as the equality test is concerned, its
@@ -222,7 +222,7 @@ fn serialize_chunk<'py, M: Mapping>(
             serialize_chunk(&key, db, v, helpers, keep_alive, seen)?;
             serialize_chunk(&value, db, v, helpers, keep_alive, seen)?;
         }
-        sort_chunks::<2, M::Key>(&mut v[n + 1..]);
+        sort_chunks::<2>(&mut v[n + 1..]);
     } else if obj.is_none() {
         v.push(token::NONE);
     } else if let Ok(b) = obj.downcast_exact::<PyBool>() {

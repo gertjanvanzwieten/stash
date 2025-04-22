@@ -5,39 +5,44 @@ use pyo3::{
 };
 use std::{fmt::Display, ops::Deref};
 
+pub type Key = [u8; 32];
+
+fn digest(b: &[u8]) -> Key {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b);
+    let mut output = [0; 32];
+    let mut output_reader = hasher.finalize_xof();
+    output_reader.fill(&mut output);
+    output
+}
+
 pub trait Mapping {
-    type Key: Bytes;
-    fn put_blob(&mut self, b: impl AsRef<[u8]>) -> MappingResult<Self::Key>;
-    fn get_blob(&self, h: Self::Key) -> MappingResult<impl Deref<Target = [u8]>>;
+    fn put(&mut self, h: Key, b: impl AsRef<[u8]>) -> MappingResult<()>;
+    fn get_blob(&self, h: Key) -> MappingResult<impl Deref<Target = [u8]>>;
     // default implementations
+    fn put_blob(&mut self, b: impl AsRef<[u8]>) -> MappingResult<Key> {
+        let h = digest(b.as_ref());
+        self.put(h, b).and(Ok(h))
+    }
     fn get_blob_from_bytes(&self, b: &[u8]) -> MappingResult<impl Deref<Target = [u8]>> {
-        let hash = Self::Key::from_bytes(b).unwrap();
+        let hash = Key::from_bytes(b).unwrap();
         self.get_blob(hash)
     }
     fn get_blob_and_tail<'a>(
         &self,
         b: &'a [u8],
     ) -> MappingResult<(impl Deref<Target = [u8]>, &'a [u8])> {
-        let (left, right) = b.split_at(Self::Key::NBYTES);
+        let (left, right) = b.split_at(Key::NBYTES);
         Ok((self.get_blob_from_bytes(left)?, right))
     }
 }
 
 pub enum MappingError {
-    NotFound(Vec<u8>),
-    Collision(Vec<u8>),
+    NotFound(Key),
+    Collision(Key),
     IoError(std::io::Error),
     PyError(PyErr),
     Dyn(Box<dyn std::error::Error>),
-}
-
-impl MappingError {
-    pub fn not_found(b: &impl Bytes) -> Self {
-        Self::NotFound(b.as_bytes().into())
-    }
-    pub fn collision(b: &impl Bytes) -> Self {
-        Self::Collision(b.as_bytes().into())
-    }
 }
 
 impl Display for MappingError {

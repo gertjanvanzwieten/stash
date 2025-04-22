@@ -8,8 +8,7 @@ use std::ops::Deref;
 
 use crate::{
     deserialize::deserialize,
-    keygen::{Blake3, KeyGenerator},
-    mapping::{Mapping, MappingError, MappingResult},
+    mapping::{Mapping, MappingError, MappingResult, Key},
     serialize::serialize,
 };
 
@@ -23,20 +22,18 @@ impl Deref for PyBytesWrapper<'_> {
 }
 
 impl Mapping for &Bound<'_, PyAny> {
-    type Key = [u8; 32];
-    fn put_blob(&mut self, b: impl AsRef<[u8]>) -> MappingResult<Self::Key> {
-        let h = Blake3.digest(b.as_ref());
+    fn put(&mut self, h: Key, b: impl AsRef<[u8]>) -> MappingResult<()> {
         if let Ok(existing) = self.get_item(PyBytes::new(self.py(), &h)) {
             if existing.downcast_exact::<PyBytes>()?.as_bytes() != b.as_ref() {
-                return Err(MappingError::collision(&h));
+                return Err(MappingError::Collision(h));
             }
         }
         else {
             self.set_item(PyBytes::new(self.py(), &h), PyBytes::new(self.py(), b.as_ref()))?;
         }
-        Ok(h)
+        Ok(())
     }
-    fn get_blob(&self, h: Self::Key) -> MappingResult<impl Deref<Target = [u8]>> {
+    fn get_blob(&self, h: Key) -> MappingResult<impl Deref<Target = [u8]>> {
         let item = self
             .get_item(PyBytes::new(self.py(), &h))?
             .downcast_exact::<PyBytes>()?

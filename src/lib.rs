@@ -5,7 +5,6 @@ mod db;
 mod deserialize;
 mod hex;
 mod int;
-mod keygen;
 mod mapping;
 mod nohash;
 mod serialize;
