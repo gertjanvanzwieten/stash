@@ -1,4 +1,4 @@
-import random, time, pickle, stash, tempfile, pathlib, contextlib
+import random, time, pickle, stash, tempfile, os, contextlib
 
 
 def mkobj(length, hashable):
@@ -56,11 +56,6 @@ def measure(what):
     print(f'{what}: in {dT:.2f}s ({100*dt/dT:.0f}% CPU)')
 
 
-def time_db(obj, db):
-    with measure(db.__class__.__name__):
-        db.hash(obj)
-
-
 def run_all_tests():
 
     obj = get_test_object()
@@ -71,20 +66,17 @@ def run_all_tests():
     with measure('hash'):
         stash.hash(obj)
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        tmpdir = pathlib.Path(tmpdir)
-        if hasattr(stash, 'PyDB'):
-            time_db(obj, stash.PyDB({}))
-        if hasattr(stash, 'RAM'):
-            time_db(obj, stash.RAM())
-        if hasattr(stash, 'FsDB'):
-            time_db(obj, stash.FsDB(tmpdir/'disk'))
-        if hasattr(stash, 'Sled'):
-            time_db(obj, stash.Sled(tmpdir/'sled'))
-        if hasattr(stash, 'LSMTree'):
-            time_db(obj, stash.LSMTree(tmpdir/'lsm'))
-        if hasattr(stash, 'Iroh'):
-            time_db(obj, stash.Iroh('/home/gertjan/.local/share/iroh'))
+    with measure('pydb'):
+        stash.PyDB({}).hash(obj)
+
+    with measure('ram'):
+        stash.RAM().hash(obj)
+
+    with tempfile.NamedTemporaryFile() as f, measure('filedb'):
+        stash.FileDB(f.name).hash(obj)
+
+    with tempfile.TemporaryDirectory() as path, measure('fsdb'):
+        stash.FsDB(path).hash(obj)
 
 
 if __name__ == '__main__':
