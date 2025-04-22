@@ -1,6 +1,5 @@
 use pyo3::prelude::*;
 
-mod bytes;
 mod db;
 mod deserialize;
 mod hex;

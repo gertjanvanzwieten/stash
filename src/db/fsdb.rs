@@ -1,10 +1,9 @@
 use pyo3::{pyclass, pymethods, types::PyBytes, Bound, PyAny, PyResult};
 
 use crate::{
-    bytes::Bytes,
     deserialize::deserialize,
     hex::Hex,
-    mapping::{Get, Key, MappingError, MappingResult, Put},
+    mapping::{Get, Key, MappingError, MappingResult, Put, NBYTES},
     serialize::serialize,
 };
 
@@ -21,11 +20,11 @@ pub struct FsDB(PathBuf);
 
 impl FsDB {
     fn path_for(&self, h: &Key) -> PathBuf {
-        let capacity = self.0.as_os_str().len() + Key::NBYTES * 2 + 2;
+        let capacity = self.0.as_os_str().len() + NBYTES * 2 + 2;
         let mut path = PathBuf::with_capacity(capacity);
         let s = path.as_mut_os_string();
         s.push(self.0.as_os_str());
-        let (left, right) = h.as_bytes().split_at(1);
+        let (left, right) = h.split_at(1);
         write!(
             s,
             "{}{}{}{}",

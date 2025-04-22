@@ -1,16 +1,17 @@
-use crate::{bytes::Bytes, hex::Hex};
+use crate::hex::Hex;
 use pyo3::{
     exceptions::{PyException, PyKeyError, PyLookupError},
     PyErr,
 };
 use std::{fmt::Display, ops::Deref};
 
-pub type Key = [u8; 32];
+pub const NBYTES: usize = 32;
+pub type Key = [u8; NBYTES];
 
 fn digest(b: &[u8]) -> Key {
     let mut hasher = blake3::Hasher::new();
     hasher.update(b);
-    let mut output = [0; 32];
+    let mut output = [0; NBYTES];
     let mut output_reader = hasher.finalize_xof();
     output_reader.fill(&mut output);
     output
@@ -29,7 +30,7 @@ pub trait Get {
     fn get(&self, h: Key) -> MappingResult<impl Deref<Target = [u8]>>;
     // default implementation
     fn get_blob<'a>(&self, b: &'a [u8]) -> MappingResult<(impl Deref<Target = [u8]>, &'a [u8])> {
-        let (left, right) = b.split_at(Key::NBYTES);
+        let (left, right) = b.split_at(NBYTES);
         Ok((self.get(left.try_into().unwrap())?, right))
     }
 }

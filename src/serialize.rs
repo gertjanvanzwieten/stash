@@ -1,7 +1,6 @@
 use crate::{
-    bytes::Bytes,
     int::Int,
-    mapping::{Key, Put},
+    mapping::{Put, NBYTES},
     token,
 };
 use pyo3::{
@@ -28,7 +27,7 @@ pub fn serialize<'py, M: Put>(
         &v[1..]
     } else {
         hash = db.put_blob(&v[1..])?;
-        hash.as_bytes()
+        &hash
     };
     Ok(PyBytes::new(obj.py(), h))
 }
@@ -107,7 +106,7 @@ fn sort_chunks<const N: usize>(v: &mut [u8]) {
         let mut i = 0;
         for _ in 0..N {
             let n = right[i];
-            i += 1 + if n == 0 { Key::NBYTES } else { n as usize };
+            i += 1 + if n == 0 { NBYTES } else { n as usize };
         }
         (left, right) = right.split_at(i);
         chunks.push(left);
@@ -274,7 +273,7 @@ fn serialize_chunk<'py, M: Put>(
     } else {
         let hash = db.put_blob(&v[n..])?;
         v.truncate(n);
-        v.extend_from_slice(hash.as_bytes());
+        v.extend_from_slice(&hash);
     }
 
     // If there is any chance of seeing this object again, add its serialization to the seen map.
