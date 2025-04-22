@@ -66,14 +66,9 @@ impl PyIroh {
             client: Some(client),
         })
     }
-    #[pyo3(signature = (obj, /, *, strict=true))]
-    fn hash<'py>(
-        &mut self,
-        obj: &Bound<'py, PyAny>,
-        strict: bool,
-    ) -> PyResult<Bound<'py, PyBytes>> {
+    fn hash<'py>(&mut self, obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyBytes>> {
         let _guard = self.runtime.enter();
-        serialize(obj, self.client.as_mut().unwrap(), strict)
+        serialize(obj, self.client.as_mut().unwrap())
     }
     fn unhash<'py>(&self, obj: &'py Bound<'py, PyBytes>) -> PyResult<Bound<'py, PyAny>> {
         let _guard = self.runtime.enter();

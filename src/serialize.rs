@@ -13,30 +13,11 @@ use std::collections::hash_map::HashMap;
 pub fn serialize<'py, M: Mapping>(
     obj: &Bound<'py, PyAny>,
     db: &mut M,
-    strict: bool,
 ) -> PyResult<Bound<'py, PyBytes>> {
     let mut v: Vec<u8> = Vec::with_capacity(255);
     let helpers = &Helpers::new(obj.py())?;
     let keep_alive = &mut Vec::new();
-    if strict {
-        serialize_chunk(
-            obj,
-            db,
-            &mut v,
-            helpers,
-            keep_alive,
-            &mut HashMap::<PyID, Strict>::new(),
-        )?;
-    } else {
-        serialize_chunk(
-            obj,
-            db,
-            &mut v,
-            helpers,
-            keep_alive,
-            &mut HashMap::<PyID, NotStrict>::new(),
-        )?;
-    }
+    serialize_chunk(obj, db, &mut v, helpers, keep_alive, &mut HashMap::new())?;
     let hash;
     let h = if v[0] == 0 {
         &v[1..]
@@ -112,77 +93,29 @@ impl<'py> Helpers<'py> {
     }
 }
 
-type PyID = *mut pyo3::ffi::PyObject;
-type NotStrict = Box<[u8]>;
-type Strict = usize;
-
-trait Seen {
-    fn cached(&self, obj: &Bound<PyAny>, v: &mut Vec<u8>) -> bool;
-    fn sort<const N: usize, K: Bytes>(v: &mut [u8]);
-    fn store(&mut self, v: &[u8], obj: &Bound<PyAny>);
-}
-
-impl Seen for HashMap<PyID, NotStrict> {
-    fn cached(&self, obj: &Bound<PyAny>, v: &mut Vec<u8>) -> bool {
-        if let Some(b) = self.get(&obj.as_ptr()) {
-            v.extend_from_slice(b);
-            true
-        } else {
-            false
+fn sort_chunks<const N: usize, K: Bytes>(v: &mut [u8]) {
+    let copy: Box<[u8]> = v.into();
+    let mut chunks = Vec::<&[u8]>::new();
+    let mut left;
+    let mut right = copy.as_ref();
+    while !right.is_empty() {
+        let mut i = 0;
+        for _ in 0..N {
+            let n = right[i];
+            i += 1 + if n == 0 { K::NBYTES } else { n as usize };
         }
+        (left, right) = right.split_at(i);
+        chunks.push(left);
     }
-    fn sort<const N: usize, K: Bytes>(v: &mut [u8]) {
-        let copy: Box<[u8]> = v.into();
-        let mut chunks = Vec::<&[u8]>::new();
-        let mut left;
-        let mut right = copy.as_ref();
-        while !right.is_empty() {
-            let mut i = 0;
-            for _ in 0..N {
-                let n = right[i];
-                i += 1 + if n == 0 { K::NBYTES } else { n as usize };
-            }
-            (left, right) = right.split_at(i);
-            chunks.push(left);
-        }
-        chunks.sort();
-        let mut left;
-        let mut right = v;
-        for chunk in chunks {
-            (left, right) = right.split_at_mut(chunk.len());
-            left.clone_from_slice(chunk);
-        }
-    }
-    fn store(&mut self, v: &[u8], obj: &Bound<PyAny>) {
-        if v.len() > 2 && obj.get_refcnt() > 2 {
-            let _ = self.insert(obj.as_ptr(), v.into());
-        }
+    chunks.sort();
+    let mut left;
+    let mut right = v;
+    for chunk in chunks {
+        (left, right) = right.split_at_mut(chunk.len());
+        left.clone_from_slice(chunk);
     }
 }
 
-impl Seen for HashMap<PyID, Strict> {
-    fn cached(&self, obj: &Bound<PyAny>, v: &mut Vec<u8>) -> bool {
-        if let Some(index) = self.get(&obj.as_ptr()) {
-            v.push(0);
-            let n = v.len();
-            v.push(token::REF);
-            let mut i = *index;
-            while i != 0 {
-                v.push(i as u8);
-                i >>= 8;
-            }
-            v[n - 1] = (v.len() - n) as u8;
-            true
-        } else {
-            false
-        }
-    }
-    fn sort<const N: usize, K: Bytes>(_v: &mut [u8]) {}
-    fn store(&mut self, _v: &[u8], obj: &Bound<PyAny>) {
-        let index = self.len();
-        let _ = self.insert(obj.as_ptr(), index);
-    }
-}
 
 // Serialize a Python object to a byte vector
 //
@@ -199,13 +132,13 @@ impl Seen for HashMap<PyID, Strict> {
 // * `helpers` - Helper object containing a `dispatch_table`, `modules` and `int` member.
 // * `keep_alive` - Python object vector to prevent garbage collection.
 // * `seen` - Hashmap with previously seen objects.
-fn serialize_chunk<'py, M: Mapping, S: Seen>(
+fn serialize_chunk<'py, M: Mapping>(
     obj: &Bound<'py, PyAny>,
     db: &mut M,
     v: &mut Vec<u8>,
     helpers: &Helpers<'py>,
     keep_alive: &mut Vec<Bound<'py, PyAny>>,
-    seen: &mut S,
+    seen: &mut HashMap<*mut pyo3::ffi::PyObject, Box<[u8]>>,
 ) -> PyResult<()> {
     // The `seen` hashmap serves to speed up hashing by recognizing that an object was serialized
     // before. It overlaps with the backrefs hashmap in that it tracks previously seen objects, but
@@ -214,7 +147,8 @@ fn serialize_chunk<'py, M: Mapping, S: Seen>(
     // the full serialization that would amount to duplicating the entire object in memory. We also
     // reduce potentially expensive database operations by not writing the same entry twice.
 
-    if seen.cached(obj, v) {
+    if let Some(b) = seen.get(&obj.as_ptr()) {
+        v.extend_from_slice(b);
         return Ok(());
     }
 
@@ -267,13 +201,13 @@ fn serialize_chunk<'py, M: Mapping, S: Seen>(
         for item in s.iter() {
             serialize_chunk(&item, db, v, helpers, keep_alive, seen)?;
         }
-        S::sort::<1, M::Key>(&mut v[n + 1..]);
+        sort_chunks::<1, M::Key>(&mut v[n + 1..]);
     } else if let Ok(s) = obj.downcast_exact::<PyFrozenSet>() {
         v.push(token::FROZENSET);
         for item in s.iter() {
             serialize_chunk(&item, db, v, helpers, keep_alive, seen)?;
         }
-        S::sort::<1, M::Key>(&mut v[n + 1..]);
+        sort_chunks::<1, M::Key>(&mut v[n + 1..]);
     } else if let Ok(s) = obj.downcast_exact::<PyDict>() {
         v.push(token::DICT);
         // Since a dictionary is an unordered object as far as the equality test is concerned, its
@@ -288,7 +222,7 @@ fn serialize_chunk<'py, M: Mapping, S: Seen>(
             serialize_chunk(&key, db, v, helpers, keep_alive, seen)?;
             serialize_chunk(&value, db, v, helpers, keep_alive, seen)?;
         }
-        S::sort::<2, M::Key>(&mut v[n + 1..]);
+        sort_chunks::<2, M::Key>(&mut v[n + 1..]);
     } else if obj.is_none() {
         v.push(token::NONE);
     } else if let Ok(b) = obj.downcast_exact::<PyBool>() {
@@ -330,8 +264,7 @@ fn serialize_chunk<'py, M: Mapping, S: Seen>(
     };
 
     // Finally, the length byte is updated to the length of the chunk. If the length exceeds 255
-    // then the chunk is added to the database and its hash written to the vector instead, as well
-    // as added to the `seen` hashmap for potential future work avoidance.
+    // then the chunk is added to the database and its hash written to the vector instead.
     if let Ok(l) = (v.len() - n).try_into() {
         v[n - 1] = l;
     } else {
@@ -339,7 +272,11 @@ fn serialize_chunk<'py, M: Mapping, S: Seen>(
         v.truncate(n);
         v.extend_from_slice(hash.as_bytes());
     }
-    seen.store(&v[n - 1..], obj);
+
+    // If there is any chance of seeing this object again, add its serialization to the seen map.
+    if obj.get_refcnt() > 2 {
+        let _ = seen.insert(obj.as_ptr(), v[n - 1..].into());
+    }
 
     Ok(())
 }

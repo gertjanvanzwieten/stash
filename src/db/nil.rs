@@ -21,7 +21,6 @@ impl<G: KeyGenerator<Key: Hash>> Mapping for Nil<G> {
 }
 
 #[pyfunction]
-#[pyo3(signature = (obj, /, *, strict=false))]
-pub fn hash<'py>(obj: &Bound<'py, PyAny>, strict: bool) -> PyResult<Bound<'py, PyBytes>> {
-    serialize(obj, &mut Nil(Blake3), strict)
+pub fn hash<'py>(obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyBytes>> {
+    serialize(obj, &mut Nil(Blake3))
 }

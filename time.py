@@ -53,47 +53,38 @@ def measure(what):
     yield
     dT = time.perf_counter() - T0
     dt = time.process_time() - t0
-    print(what, f'in {dT:.2f}s ({100*dt/dT:.0f}% CPU)')
+    print(f'{what}: in {dT:.2f}s ({100*dt/dT:.0f}% CPU)')
 
 
-def time_any(obj, dumps, loads=None):
-    with measure('- dumped'):
-        h = dumps(obj)
-    if loads:
-        with measure('- loaded'):
-            obj_ = loads(h)
-        assert obj == obj_
-
-
-def time_stash(obj, db):
-    print(db.__class__.__name__)
-    time_any(obj, db.hash, db.unhash)
+def time_db(obj, db):
+    with measure(db.__class__.__name__):
+        db.hash(obj)
 
 
 def run_all_tests():
 
     obj = get_test_object()
 
-    print('pickle')
-    time_any(obj, pickle.dumps, pickle.loads)
+    with measure('pickle'):
+        pickle.dumps(obj)
 
-    print('hash')
-    time_any(obj, stash.hash)
+    with measure('hash'):
+        stash.hash(obj)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = pathlib.Path(tmpdir)
         if hasattr(stash, 'PyDB'):
-            time_stash(obj, stash.PyDB({}))
+            time_db(obj, stash.PyDB({}))
         if hasattr(stash, 'RAM'):
-            time_stash(obj, stash.RAM())
+            time_db(obj, stash.RAM())
         if hasattr(stash, 'FsDB'):
-            time_stash(obj, stash.FsDB(tmpdir/'disk'))
+            time_db(obj, stash.FsDB(tmpdir/'disk'))
         if hasattr(stash, 'Sled'):
-            time_stash(obj, stash.Sled(tmpdir/'sled'))
+            time_db(obj, stash.Sled(tmpdir/'sled'))
         if hasattr(stash, 'LSMTree'):
-            time_stash(obj, stash.LSMTree(tmpdir/'lsm'))
+            time_db(obj, stash.LSMTree(tmpdir/'lsm'))
         if hasattr(stash, 'Iroh'):
-            time_stash(obj, stash.Iroh('/home/gertjan/.local/share/iroh'))
+            time_db(obj, stash.Iroh('/home/gertjan/.local/share/iroh'))
 
 
 if __name__ == '__main__':

@@ -67,13 +67,8 @@ impl PySled {
             db: Sled::new(path, Blake3)?,
         })
     }
-    #[pyo3(signature = (obj, strict=true))]
-    fn hash<'py>(
-        &mut self,
-        obj: &Bound<'py, PyAny>,
-        strict: bool,
-    ) -> PyResult<Bound<'py, PyBytes>> {
-        serialize(obj, &mut self.db, strict)
+    fn hash<'py>(&mut self, obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyBytes>> {
+        serialize(obj, &mut self.db)
     }
     fn unhash<'py>(&self, obj: &'py Bound<'py, PyBytes>) -> PyResult<Bound<'py, PyAny>> {
         deserialize(obj, &self.db)

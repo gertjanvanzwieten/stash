@@ -15,10 +15,9 @@ pub fn deserialize<'py, M: Mapping<Key: Hash>>(
     db: &M,
 ) -> PyResult<Bound<'py, PyAny>> {
     let b = db.get_blob_from_bytes(obj.as_bytes())?;
-    let mut items: Vec<Bound<PyAny>> = Vec::new();
     let py = obj.py();
     let int = Int::new(py)?;
-    deserialize_chunk(&b, db, &mut items, py, &int)
+    deserialize_chunk(&b, db, py, &int)
 }
 
 // Deserialize a Python object from a byte stream
@@ -28,13 +27,11 @@ pub fn deserialize<'py, M: Mapping<Key: Hash>>(
 //
 // * `b` - Byte vector to deserialize into a Python object
 // * `db` - Database to load hashed blobs from.
-// * `items` - Vector of previously deserialized objects for potential backreferencing
 // * `py` - A marker token that represents holding the GIL.
 // * `int` - Helper object to facilitate deserialization of integers.
 fn deserialize_chunk<'py, M: Mapping<Key: Hash>>(
     b: &[u8],
     db: &M,
-    items: &mut Vec<Bound<'py, PyAny>>,
     py: Python<'py>,
     int: &Int<'py>,
 ) -> PyResult<Bound<'py, PyAny>> {
@@ -42,15 +39,6 @@ fn deserialize_chunk<'py, M: Mapping<Key: Hash>>(
 
     let mut owned;
     let obj = match token[0] {
-        token::REF => {
-            let mut index: usize = 0;
-            let mut n = 0;
-            for b in data {
-                index |= (*b as usize) << n;
-                n += 8;
-            }
-            return Ok(items[index].clone());
-        }
         token::BYTES => PyBytes::new(py, data).into_any(),
         token::BYTEARRAY => PyByteArray::new(py, data).into_any(),
         token::STRING => PyString::new(py, std::str::from_utf8(data)?).into_any(),
@@ -69,7 +57,6 @@ fn deserialize_chunk<'py, M: Mapping<Key: Hash>>(
                         chunk
                     },
                     db,
-                    items,
                     py,
                     int,
                 )?)?;
@@ -89,7 +76,6 @@ fn deserialize_chunk<'py, M: Mapping<Key: Hash>>(
                         chunk
                     },
                     db,
-                    items,
                     py,
                     int,
                 )?);
@@ -109,7 +95,6 @@ fn deserialize_chunk<'py, M: Mapping<Key: Hash>>(
                         chunk
                     },
                     db,
-                    items,
                     py,
                     int,
                 )?)?;
@@ -129,7 +114,6 @@ fn deserialize_chunk<'py, M: Mapping<Key: Hash>>(
                         chunk
                     },
                     db,
-                    items,
                     py,
                     int,
                 )?);
@@ -149,7 +133,6 @@ fn deserialize_chunk<'py, M: Mapping<Key: Hash>>(
                         chunk
                     },
                     db,
-                    items,
                     py,
                     int,
                 )?;
@@ -163,7 +146,6 @@ fn deserialize_chunk<'py, M: Mapping<Key: Hash>>(
                         chunk
                     },
                     db,
-                    items,
                     py,
                     int,
                 )?;
@@ -193,7 +175,6 @@ fn deserialize_chunk<'py, M: Mapping<Key: Hash>>(
                         chunk
                     },
                     db,
-                    items,
                     py,
                     int,
                 )?);
@@ -222,6 +203,5 @@ fn deserialize_chunk<'py, M: Mapping<Key: Hash>>(
         _ => return Err(PyTypeError::new_err("cannot load object")),
     };
 
-    items.push(obj.clone());
     Ok(obj)
 }

@@ -23,11 +23,10 @@ class Stash(unittest.TestCase):
     def check(self, obj, eq=lambda x: x):
         d = {}
         db = stash.PyDB(d)
-        for strict in False, True:
-            b = db.hash(obj, strict=strict)
-            obj_ = db.unhash(b)
-            self.assertIs(type(obj), type(obj_))
-            self.assertEqual(eq(obj_), eq(obj))
+        b = db.hash(obj)
+        obj_ = db.unhash(b)
+        self.assertIs(type(obj), type(obj_))
+        self.assertEqual(eq(obj_), eq(obj))
         return len(d[b])
 
     def test_int(self):
@@ -77,11 +76,7 @@ class Stash(unittest.TestCase):
         self.check(d1)
         d2 = {'b': 2, 'c': 3, 'a': 1}
         self.check(d2)
-        d3 = {'b': 2, 'c': 3, 'a': 1}
-        self.check(d3)
         self.assertEqual(stash.hash(d1), stash.hash(d2))
-        self.assertNotEqual(stash.hash(d1, strict=True), stash.hash(d2, strict=True))
-        self.assertEqual(stash.hash(d2, strict=True), stash.hash(d3, strict=True))
 
     def test_none(self):
         self.check(None)
@@ -108,12 +103,3 @@ class Stash(unittest.TestCase):
     @unittest.skipIf(numpy is None, "numpy is not installed")
     def test_dispatch_table(self):
         self.check(numpy.sin)
-
-    def test_dedup(self):
-        db = stash.PyDB({})
-        bigobj = b'abc' * 999
-        b = db.hash([bigobj, bigobj])
-        bigobj1, bigobj2 = db.unhash(b)
-        self.assertIs(bigobj1, bigobj2)
-        self.assertIsNot(bigobj1, bigobj)
-        self.assertEqual(bigobj1, bigobj)

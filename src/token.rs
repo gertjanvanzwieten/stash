@@ -1,4 +1,3 @@
-pub const REF: u8 = 0;
 pub const INT: u8 = 1;
 pub const BYTES: u8 = 2;
 pub const STRING: u8 = 3;
