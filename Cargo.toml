@@ -17,4 +17,4 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = { version = "0.24", features = ["extension-module", "abi3-py38"] }
-blake3 = "1.5"
+cityhash-rs = "1.0.1"

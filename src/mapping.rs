@@ -5,16 +5,11 @@ use pyo3::{
 };
 use std::{fmt::Display, ops::Deref};
 
-pub const NBYTES: usize = 32;
+pub const NBYTES: usize = 16; // 128 bit
 pub type Key = [u8; NBYTES];
 
 fn digest(b: &[u8]) -> Key {
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(b);
-    let mut output = [0; NBYTES];
-    let mut output_reader = hasher.finalize_xof();
-    output_reader.fill(&mut output);
-    output
+    cityhash_rs::cityhash_110_128(b).to_le_bytes()
 }
 
 pub trait Put {
