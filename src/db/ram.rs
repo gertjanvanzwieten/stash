@@ -2,31 +2,35 @@ use pyo3::{pyclass, pymethods, types::PyBytes, Bound, PyAny, PyResult};
 
 use crate::{
     deserialize::deserialize,
-    mapping::{Mapping, MappingError, MappingResult, Key},
+    mapping::{Get, Key, MappingError, MappingResult, Put},
     nohash::NoHashBuilder,
     serialize::serialize,
 };
 
 use std::{
-    collections::{HashMap, hash_map::Entry},
+    collections::{hash_map::Entry, HashMap},
     ops::Deref,
 };
 
 struct Ram(HashMap<Key, Vec<u8>, NoHashBuilder>);
 
-impl Mapping for Ram {
+impl Put for Ram {
     fn put(&mut self, h: Key, b: impl AsRef<[u8]>) -> MappingResult<()> {
-        match self.0.entry(h.clone()) {
-            Entry::Occupied(e) =>
+        match self.0.entry(h) {
+            Entry::Occupied(e) => {
                 if e.get() != b.as_ref() {
                     return Err(MappingError::Collision(h));
                 }
+            }
             Entry::Vacant(e) => {
                 e.insert_entry(b.as_ref().to_vec());
             }
         }
         Ok(())
     }
+}
+
+impl Get for Ram {
     fn get_blob(&self, h: Key) -> MappingResult<impl Deref<Target = [u8]>> {
         self.0
             .get(&h)

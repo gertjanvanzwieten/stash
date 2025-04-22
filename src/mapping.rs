@@ -16,14 +16,17 @@ fn digest(b: &[u8]) -> Key {
     output
 }
 
-pub trait Mapping {
+pub trait Put {
     fn put(&mut self, h: Key, b: impl AsRef<[u8]>) -> MappingResult<()>;
-    fn get_blob(&self, h: Key) -> MappingResult<impl Deref<Target = [u8]>>;
-    // default implementations
+    // default implementation
     fn put_blob(&mut self, b: impl AsRef<[u8]>) -> MappingResult<Key> {
         let h = digest(b.as_ref());
         self.put(h, b).and(Ok(h))
     }
+}
+
+pub trait Get {
+    fn get_blob(&self, h: Key) -> MappingResult<impl Deref<Target = [u8]>>;
     fn get_blob_from_bytes(&self, b: &[u8]) -> MappingResult<impl Deref<Target = [u8]>> {
         let hash = Key::from_bytes(b).unwrap();
         self.get_blob(hash)
@@ -81,7 +84,10 @@ impl From<MappingError> for PyErr {
     fn from(err: MappingError) -> Self {
         match err {
             MappingError::NotFound(hash) => PyErr::new::<PyKeyError, _>(format!("{}", Hex(&hash))),
-            MappingError::Collision(hash) => PyErr::new::<PyLookupError, _>(format!("hash collision encountered for {}", Hex(&hash))),
+            MappingError::Collision(hash) => PyErr::new::<PyLookupError, _>(format!(
+                "hash collision encountered for {}",
+                Hex(&hash)
+            )),
             MappingError::PyError(py_error) => py_error,
             MappingError::IoError(err) => err.into(),
             MappingError::Dyn(err) => PyErr::new::<PyException, _>(format!("{}", err)),

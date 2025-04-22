@@ -1,4 +1,9 @@
-use crate::{bytes::Bytes, int::Int, mapping::{Mapping, Key}, token};
+use crate::{
+    bytes::Bytes,
+    int::Int,
+    mapping::{Key, Put},
+    token,
+};
 use pyo3::{
     exceptions::PyTypeError,
     intern,
@@ -10,7 +15,7 @@ use pyo3::{
 };
 use std::collections::hash_map::HashMap;
 
-pub fn serialize<'py, M: Mapping>(
+pub fn serialize<'py, M: Put>(
     obj: &Bound<'py, PyAny>,
     db: &mut M,
 ) -> PyResult<Bound<'py, PyBytes>> {
@@ -116,7 +121,6 @@ fn sort_chunks<const N: usize>(v: &mut [u8]) {
     }
 }
 
-
 // Serialize a Python object to a byte vector
 //
 // This routine takes an arbitrary Python object and appends its serialization to a byte vector.
@@ -132,7 +136,7 @@ fn sort_chunks<const N: usize>(v: &mut [u8]) {
 // * `helpers` - Helper object containing a `dispatch_table`, `modules` and `int` member.
 // * `keep_alive` - Python object vector to prevent garbage collection.
 // * `seen` - Hashmap with previously seen objects.
-fn serialize_chunk<'py, M: Mapping>(
+fn serialize_chunk<'py, M: Put>(
     obj: &Bound<'py, PyAny>,
     db: &mut M,
     v: &mut Vec<u8>,

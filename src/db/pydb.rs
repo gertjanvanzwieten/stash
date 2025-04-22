@@ -8,7 +8,7 @@ use std::ops::Deref;
 
 use crate::{
     deserialize::deserialize,
-    mapping::{Mapping, MappingError, MappingResult, Key},
+    mapping::{Get, Key, MappingError, MappingResult, Put},
     serialize::serialize,
 };
 
@@ -21,18 +21,23 @@ impl Deref for PyBytesWrapper<'_> {
     }
 }
 
-impl Mapping for &Bound<'_, PyAny> {
+impl Put for &Bound<'_, PyAny> {
     fn put(&mut self, h: Key, b: impl AsRef<[u8]>) -> MappingResult<()> {
         if let Ok(existing) = self.get_item(PyBytes::new(self.py(), &h)) {
             if existing.downcast_exact::<PyBytes>()?.as_bytes() != b.as_ref() {
                 return Err(MappingError::Collision(h));
             }
-        }
-        else {
-            self.set_item(PyBytes::new(self.py(), &h), PyBytes::new(self.py(), b.as_ref()))?;
+        } else {
+            self.set_item(
+                PyBytes::new(self.py(), &h),
+                PyBytes::new(self.py(), b.as_ref()),
+            )?;
         }
         Ok(())
     }
+}
+
+impl Get for &Bound<'_, PyAny> {
     fn get_blob(&self, h: Key) -> MappingResult<impl Deref<Target = [u8]>> {
         let item = self
             .get_item(PyBytes::new(self.py(), &h))?

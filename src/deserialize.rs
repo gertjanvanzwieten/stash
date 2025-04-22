@@ -1,4 +1,4 @@
-use crate::{int::Int, mapping::Mapping, token};
+use crate::{int::Int, mapping::Get, token};
 use pyo3::{
     exceptions::PyTypeError,
     intern,
@@ -9,10 +9,7 @@ use pyo3::{
     },
 };
 
-pub fn deserialize<'py, M: Mapping>(
-    obj: &Bound<'py, PyBytes>,
-    db: &M,
-) -> PyResult<Bound<'py, PyAny>> {
+pub fn deserialize<'py, M: Get>(obj: &Bound<'py, PyBytes>, db: &M) -> PyResult<Bound<'py, PyAny>> {
     let b = db.get_blob_from_bytes(obj.as_bytes())?;
     let py = obj.py();
     let int = Int::new(py)?;
@@ -28,7 +25,7 @@ pub fn deserialize<'py, M: Mapping>(
 // * `db` - Database to load hashed blobs from.
 // * `py` - A marker token that represents holding the GIL.
 // * `int` - Helper object to facilitate deserialization of integers.
-fn deserialize_chunk<'py, M: Mapping>(
+fn deserialize_chunk<'py, M: Get>(
     b: &[u8],
     db: &M,
     py: Python<'py>,

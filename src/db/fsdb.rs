@@ -4,11 +4,17 @@ use crate::{
     bytes::Bytes,
     deserialize::deserialize,
     hex::Hex,
-    mapping::{Mapping, MappingError, MappingResult, Key},
+    mapping::{Get, Key, MappingError, MappingResult, Put},
     serialize::serialize,
 };
 
-use std::{fmt::Write as FmtWrite, fs::File, io::{Read, Write, Result as IoResult}, ops::Deref, path::PathBuf};
+use std::{
+    fmt::Write as FmtWrite,
+    fs::File,
+    io::{Read, Result as IoResult, Write},
+    ops::Deref,
+    path::PathBuf,
+};
 
 pub struct FsDB(PathBuf);
 
@@ -46,20 +52,22 @@ fn file_equals(mut file: File, mut data: &[u8]) -> IoResult<bool> {
     }
 }
 
-impl Mapping for FsDB {
+impl Put for FsDB {
     fn put(&mut self, h: Key, b: impl AsRef<[u8]>) -> MappingResult<()> {
         let path = self.path_for(&h);
         if let Ok(f) = File::open(&path) {
-            if ! file_equals(f, b.as_ref())? {
+            if !file_equals(f, b.as_ref())? {
                 return Err(MappingError::Collision(h));
             }
-        }
-        else {
+        } else {
             std::fs::create_dir_all(path.parent().unwrap())?;
             File::create_new(&path)?.write_all(b.as_ref())?;
         }
         Ok(())
     }
+}
+
+impl Get for FsDB {
     fn get_blob(&self, h: Key) -> MappingResult<impl Deref<Target = [u8]>> {
         std::fs::read(self.path_for(&h)).map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
