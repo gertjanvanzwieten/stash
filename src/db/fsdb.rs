@@ -16,6 +16,7 @@ use std::{
     path::PathBuf,
 };
 
+#[pyclass(name = "FsDB")]
 pub struct FsDB(PathBuf);
 
 impl FsDB {
@@ -79,21 +80,16 @@ impl Get for FsDB {
     }
 }
 
-#[pyclass(frozen, name = "FsDB")]
-pub struct PyFsDB {
-    path: PathBuf,
-}
-
 #[pymethods]
-impl PyFsDB {
+impl FsDB {
     #[new]
     fn py_new(path: PathBuf) -> Self {
-        Self { path }
+        Self(path)
     }
-    fn hash<'py>(&self, obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyBytes>> {
-        serialize(obj, &mut FsDB(self.path.clone()))
+    fn hash<'py>(&mut self, obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyBytes>> {
+        serialize(obj, self)
     }
     fn unhash<'py>(&self, obj: &'py Bound<'py, PyBytes>) -> PyResult<Bound<'py, PyAny>> {
-        deserialize(obj, &FsDB(self.path.clone()))
+        deserialize(obj, self)
     }
 }

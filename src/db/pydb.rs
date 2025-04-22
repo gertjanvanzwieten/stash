@@ -55,8 +55,8 @@ pub struct PyDB {
 #[pymethods]
 impl PyDB {
     #[new]
-    fn py_new(pydb: PyObject) -> PyResult<Self> {
-        Ok(Self { pydb })
+    fn py_new(pydb: PyObject) -> Self {
+        Self { pydb }
     }
     fn hash<'py>(&self, obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyBytes>> {
         serialize(obj, &mut self.pydb.bind(obj.py()))

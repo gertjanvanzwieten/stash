@@ -12,7 +12,8 @@ use std::{
     ops::Deref,
 };
 
-struct Ram(HashMap<Key, Vec<u8>, NoHashBuilder>);
+#[pyclass(name = "RAM")]
+pub struct Ram(HashMap<Key, Vec<u8>, NoHashBuilder>);
 
 impl Put for Ram {
     fn put(&mut self, h: Key, b: impl AsRef<[u8]>) -> MappingResult<()> {
@@ -38,23 +39,16 @@ impl Get for Ram {
     }
 }
 
-#[pyclass(name = "RAM")]
-pub struct PyRam {
-    db: Ram,
-}
-
 #[pymethods]
-impl PyRam {
+impl Ram {
     #[new]
-    fn py_new() -> PyResult<Self> {
-        Ok(Self {
-            db: Ram(HashMap::default()),
-        })
+    fn py_new() -> Self {
+        Self(HashMap::default())
     }
     fn hash<'py>(&mut self, obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyBytes>> {
-        serialize(obj, &mut self.db)
+        serialize(obj, self)
     }
     fn unhash<'py>(&self, obj: &'py Bound<'py, PyBytes>) -> PyResult<Bound<'py, PyAny>> {
-        deserialize(obj, &self.db)
+        deserialize(obj, self)
     }
 }
